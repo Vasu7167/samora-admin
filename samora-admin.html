@@ -169,8 +169,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 <script>
 // ── Config ──────────────────────────────────────────────────────────────
 const SB_URL  = localStorage.getItem('samora-admin-sb-url')  || 'https://gowpuicpmrwsohongosf.supabase.co';
-const SB_ANON = localStorage.getItem('samora-admin-sb-anon') || '';
-const EDGE_FN = SB_URL + '/functions/v1/sam-gmail-signals';
+const SB_ANON = localStorage.getItem('samora-admin-sb-anon') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdvd3B1aWNwbXJ3c29ob25nb3NmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzOTExMDgsImV4cCI6MjA5NTk2NzEwOH0.35CjODxyxOjAKp-xBOBx4oAXO_qjLyVttVaJEhp7YEg';const EDGE_FN = SB_URL + '/functions/v1/sam-gmail-signals';
 
 let adminUser = null;
 let clients   = [];   // [{org_id, name, settings}]
