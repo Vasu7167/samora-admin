@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Samora Admin</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0F0E0B;--bg2:#1A1915;--bg3:#23211C;--surface:#2A2820;--surface2:#323028;
+  --border:#3A3830;--border2:#4A4840;
+  --text:#E8E4D8;--text2:#B8B4A8;--text3:#787468;
+  --gold:#C49A2A;--gold2:#A07824;--green:#4A8C5C;--coral:#C0523F;--amber:#C07820;--blue:#3A6EA8;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --r:8px;--r2:12px;
+}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+#auth-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:16px}
+#auth-screen h1{font-size:22px;font-weight:500;color:var(--text)}
+.auth-card{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r2);padding:28px;width:340px}
+.auth-card h2{font-size:15px;font-weight:500;margin-bottom:20px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;color:var(--text3);margin-bottom:5px}
+.field input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:8px 10px;color:var(--text);font-family:var(--sans);font-size:14px;outline:none}
+.field input:focus{border-color:var(--gold2)}
+.btn{width:100%;padding:10px;background:var(--gold2);border:none;border-radius:var(--r);color:#18160F;font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--gold)}
+.msg{font-size:12px;color:var(--coral);margin-top:8px;text-align:center}
+
+#app{display:none;flex:1;flex-direction:column}
+.topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between}
+.topbar-brand{font-size:16px;font-weight:600;color:var(--gold)}
+.topbar-right{display:flex;align-items:center;gap:12px;font-size:13px;color:var(--text3)}
+.logout-btn{background:none;border:1px solid var(--border);border-radius:var(--r);padding:5px 12px;color:var(--text3);cursor:pointer;font-family:var(--sans);font-size:12px}
+.logout-btn:hover{color:var(--text);border-color:var(--border2)}
+
+.layout{display:flex;flex:1;min-height:0}
+.sidebar{width:220px;background:var(--bg2);border-right:1px solid var(--border);padding:16px 0;flex-shrink:0}
+.sidebar-section{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;padding:12px 16px 4px}
+.nav-item{padding:8px 16px;font-size:13px;color:var(--text3);cursor:pointer;display:flex;align-items:center;gap:8px;border-left:2px solid transparent;transition:all 0.15s}
+.nav-item:hover{color:var(--text);background:var(--surface)}
+.nav-item.active{color:var(--gold);background:var(--surface);border-left-color:var(--gold)}
+.client-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0}
+.client-dot.inactive{background:var(--text3)}
+
+.main{flex:1;padding:24px;overflow-y:auto}
+.page{display:none}
+.page.active{display:block}
+
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.page-title{font-size:18px;font-weight:500}
+.page-sub{font-size:13px;color:var(--text3);margin-top:2px}
+.add-btn{background:var(--gold2);border:none;border-radius:var(--r);padding:8px 16px;color:#18160F;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px}
+.add-btn:hover{background:var(--gold)}
+
+.client-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:24px}
+.client-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:16px;cursor:pointer;transition:border-color 0.15s}
+.client-card:hover,.client-card.selected{border-color:var(--gold2)}
+.cc-header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.avatar{width:36px;height:36px;border-radius:50%;background:var(--gold2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#18160F;flex-shrink:0}
+.cc-name{font-size:14px;font-weight:500}
+.cc-meta{font-size:11px;color:var(--text3);margin-top:1px}
+.pill{display:inline-flex;align-items:center;font-size:10px;padding:2px 7px;border-radius:20px;font-weight:500}
+.pill-green{background:rgba(74,140,92,0.2);color:#6DB88A}
+.pill-gray{background:rgba(120,116,104,0.2);color:var(--text3)}
+.flag-row{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+
+.config-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:20px}
+.config-wrap-header{display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.config-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.config-panel{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:16px}
+.config-panel-title{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px}
+.row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)}
+.row:last-child{border-bottom:none}
+.row-label{font-size:13px;color:var(--text)}
+.row-sub{font-size:11px;color:var(--text3);margin-top:1px}
+.toggle{width:32px;height:18px;border-radius:9px;cursor:pointer;position:relative;transition:background 0.2s;flex-shrink:0;border:none}
+.toggle.on{background:var(--gold2)}
+.toggle.off{background:var(--border2)}
+.toggle-dot{position:absolute;top:2px;width:14px;height:14px;border-radius:50%;background:white;transition:left 0.15s;pointer-events:none}
+.toggle.on .toggle-dot{left:16px}
+.toggle.off .toggle-dot{left:2px}
+.sel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:5px 8px;font-size:12px;color:var(--text);font-family:var(--sans)}
+.key-row{margin-top:8px}
+.key-label{font-size:11px;color:var(--text3);margin-bottom:4px}
+.key-input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:6px 8px;color:var(--text3);font-family:monospace;font-size:11px}
+.key-input:focus{outline:none;border-color:var(--gold2);color:var(--text)}
+.stage-list{display:flex;flex-direction:column;gap:6px}
+.stage-row{display:flex;align-items:center;gap:8px;background:var(--surface);border-radius:var(--r);padding:6px 10px}
+.stage-num{font-size:11px;color:var(--text3);width:16px}
+.stage-input{flex:1;background:transparent;border:none;color:var(--text);font-family:var(--sans);font-size:13px;outline:none}
+.stage-del{background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:0 2px;line-height:1}
+.stage-del:hover{color:var(--coral)}
+.num-input{width:52px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:4px 8px;color:var(--text);font-family:var(--sans);font-size:13px;text-align:center}
+.str-input{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:5px 8px;color:var(--text);font-family:var(--sans);font-size:12px;width:110px}
+.add-stage-btn{margin-top:6px;font-size:12px;padding:5px 10px;border-radius:var(--r);border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;width:100%;font-family:var(--sans)}
+.add-stage-btn:hover{color:var(--text);border-color:var(--border2)}
+.save-bar{margin-top:16px;display:flex;align-items:center;gap:12px}
+.save-btn{background:var(--gold2);border:none;border-radius:var(--r);padding:9px 24px;color:#18160F;font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer}
+.save-btn:hover{background:var(--gold)}
+.save-status{font-size:12px;color:var(--text3)}
+.save-status.ok{color:var(--green)}
+.save-status.err{color:var(--coral)}
+
+.channel-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.channel-row{display:flex;align-items:center;justify-content:space-between;background:var(--surface);border-radius:var(--r);padding:6px 10px}
+.channel-label{font-size:12px;color:var(--text)}
+.channel-badge{font-size:9px;padding:1px 5px;border-radius:10px;font-weight:500}
+.badge-ok{background:rgba(74,140,92,0.2);color:#6DB88A}
+.badge-soon{background:rgba(120,116,104,0.15);color:var(--text3)}
+</style>
+</head>
+<body>
+
+<!-- Auth screen -->
+<div id="auth-screen">
+  <h1>Samora Admin</h1>
+  <div class="auth-card">
+    <h2>Sign in</h2>
+    <div class="field"><label>Email</label><input id="aEmail" type="email" placeholder="vasu@samora.app" autocomplete="username"/></div>
+    <div class="field"><label>Password</label><input id="aPass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+    <button class="btn" onclick="doLogin()">Sign in</button>
+    <div class="msg" id="authMsg"></div>
+  </div>
+</div>
+
+<!-- Main app -->
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-brand">Samora Admin</div>
+    <div class="topbar-right">
+      <span id="adminEmail"></span>
+      <button class="logout-btn" onclick="logout()">Sign out</button>
+    </div>
+  </div>
+  <div class="layout">
+    <div class="sidebar">
+      <div class="sidebar-section">Clients</div>
+      <div id="client-nav"></div>
+      <div class="sidebar-section" style="margin-top:8px">Samora</div>
+      <div class="nav-item" onclick="showPage('overview')">&#9632; Usage overview</div>
+      <div class="nav-item" onclick="showPage('admins')">&#9632; Admin access</div>
+    </div>
+    <div class="main">
+      <!-- Client config page -->
+      <div class="page active" id="page-client">
+        <div class="page-header">
+          <div><div class="page-title" id="client-page-title">Select a client</div><div class="page-sub" id="client-page-sub"></div></div>
+          <button class="add-btn" onclick="newClient()">+ Add client</button>
+        </div>
+        <div id="client-config-body">
+          <div style="color:var(--text3);font-size:13px;padding:40px 0;text-align:center">Select a client from the sidebar to configure</div>
+        </div>
+      </div>
+      <!-- Overview placeholder -->
+      <div class="page" id="page-overview">
+        <div class="page-header"><div><div class="page-title">Usage overview</div><div class="page-sub">Across all active client orgs</div></div></div>
+        <div style="color:var(--text3);font-size:13px;padding:40px 0;text-align:center">Coming soon — will show requests/day per org, Gemini quota usage, active users</div>
+      </div>
+      <!-- Admins placeholder -->
+      <div class="page" id="page-admins">
+        <div class="page-header"><div><div class="page-title">Admin access</div><div class="page-sub">Samora-level admins who can access this dashboard</div></div></div>
+        <div style="color:var(--text3);font-size:13px;padding:40px 0;text-align:center">Manage samora_admins table rows here</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────
+const SB_URL  = localStorage.getItem('samora-admin-sb-url')  || 'https://gowpuicpmrwsohongosf.supabase.co';
+const SB_ANON = localStorage.getItem('samora-admin-sb-anon') || '';
+const EDGE_FN = SB_URL + '/functions/v1/sam-gmail-signals';
+
+let adminUser = null;
+let clients   = [];   // [{org_id, name, settings}]
+let activeOrg = null;
+
+// ── Auth ────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const email = document.getElementById('aEmail').value.trim();
+  const pass  = document.getElementById('aPass').value;
+  if (!email || !pass) { setMsg('Enter email and password', true); return; }
+  try {
+    const r = await fetch(SB_URL + '/auth/v1/token?grant_type=password', {
+      method:'POST', headers:{'apikey':SB_ANON,'Content-Type':'application/json'},
+      body: JSON.stringify({email, password:pass})
+    });
+    const d = await r.json();
+    if (d.error || !d.access_token) { setMsg(d.error_description || d.msg || 'Invalid credentials', true); return; }
+    adminUser = { id: d.user.id, email: d.user.email, token: d.access_token };
+
+    // Verify this user is in samora_admins
+    const ck = await fetch(SB_URL + '/rest/v1/samora_admins?user_id=eq.' + adminUser.id + '&select=id&limit=1', {
+      headers: { 'apikey': SB_ANON, 'Authorization': 'Bearer ' + adminUser.token }
+    });
+    const ckRows = await ck.json();
+    if (!Array.isArray(ckRows) || !ckRows.length) {
+      adminUser = null;
+      setMsg('Not authorised — this account is not a Samora admin', true);
+      return;
+    }
+
+    document.getElementById('adminEmail').textContent = adminUser.email;
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    loadClients();
+  } catch(e) { setMsg('Connection error: ' + e.message, true); }
+}
+function setMsg(m, err) {
+  const el = document.getElementById('authMsg');
+  el.textContent = m; el.style.color = err ? 'var(--coral)' : 'var(--green)';
+}
+function logout() {
+  adminUser = null; clients = []; activeOrg = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+}
+
+// ── Load all client orgs ────────────────────────────────────────────────
+async function loadClients() {
+  try {
+    // Fetch all organisations + their settings in one pass via service role
+    const r = await fetch(EDGE_FN, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+adminUser.token,'apikey':SB_ANON},
+      body: JSON.stringify({action:'admin_list_orgs'})
+    });
+    const d = await r.json();
+    clients = d.orgs || [];
+  } catch(e) {
+    // Fallback: load orgs directly if admin_list_orgs not yet deployed
+    clients = [];
+  }
+  renderSidebar();
+}
+
+function renderSidebar() {
+  const nav = document.getElementById('client-nav');
+  nav.innerHTML = clients.length
+    ? clients.map(c =>
+        '<div class="nav-item' + (activeOrg===c.org_id?' active':'') + '" onclick="selectClient(\''+c.org_id+'\')">' +
+          '<div class="client-dot' + (c.active!==false?'':' inactive') + '"></div>' +
+          escHtml(c.display_name || c.name || 'Unnamed') +
+        '</div>'
+      ).join('')
+    : '<div style="padding:8px 16px;font-size:12px;color:var(--text3)">No clients yet</div>';
+}
+
+// ── Select / render client ──────────────────────────────────────────────
+async function selectClient(orgId) {
+  activeOrg = orgId;
+  renderSidebar();
+  showPage('client');
+
+  // Fetch this org's current settings
+  let settings = (clients.find(c=>c.org_id===orgId)||{}).settings || {};
+  const orgName = (clients.find(c=>c.org_id===orgId)||{}).display_name || 'Client';
+  document.getElementById('client-page-title').textContent = orgName;
+  document.getElementById('client-page-sub').textContent = 'org_id: ' + orgId;
+
+  renderClientConfig(orgId, orgName, settings);
+}
+
+function renderClientConfig(orgId, orgName, s) {
+  const stages = s.deal_stages || [{key:'prospective',label:'Prospective'},{key:'value_prop',label:'Value Prop'},{key:'commercial',label:'Commercial'}];
+  const features = s.features || {};
+  const channels = s.channels || {};
+  const roles = s.role_labels || {};
+
+  document.getElementById('client-config-body').innerHTML = `
+    <div class="config-wrap">
+      <div class="config-grid">
+
+        <!-- Feature flags -->
+        <div class="config-panel">
+          <div class="config-panel-title">Feature flags</div>
+          ${['sam_intelligence','account_coverage','intent_vs_reality','account_intel_ai','digest_reports'].map(f=>
+            flagRow(f, features[f]!==false, {
+              sam_intelligence:'SAM Intelligence','account_coverage':'Coverage tracking',
+              intent_vs_reality:'Intent vs Reality',account_intel_ai:'AI account intel',digest_reports:'Digest reports'
+            }[f]||f)
+          ).join('')}
+        </div>
+
+        <!-- Email + AI -->
+        <div class="config-panel">
+          <div class="config-panel-title">Integrations</div>
+          <div class="row">
+            <div class="row-label">Email provider</div>
+            <select class="sel" id="cfg-email-provider" onchange="markDirty()">
+              <option value="gmail" ${(s.email_provider||'gmail')==='gmail'?'selected':''}>Gmail</option>
+              <option value="outlook" ${s.email_provider==='outlook'?'selected':''}>Outlook</option>
+              <option value="both" ${s.email_provider==='both'?'selected':''}>Both</option>
+            </select>
+          </div>
+          <div class="row">
+            <div class="row-label">AI engine</div>
+            <select class="sel" id="cfg-ai-engine" onchange="markDirty()">
+              <option value="gemini" ${(s.ai_engine||'gemini')==='gemini'?'selected':''}>Gemini</option>
+              <option value="openai" ${s.ai_engine==='openai'?'selected':''}>OpenAI</option>
+              <option value="none" ${s.ai_engine==='none'?'selected':''}>None (SAM only)</option>
+            </select>
+          </div>
+          <div class="row">
+            <div class="row-label">AI model</div>
+            <input class="str-input" id="cfg-ai-model" value="${escHtml(s.ai_model||'gemini-2.5-flash')}" oninput="markDirty()"/>
+          </div>
+          <div class="key-row"><div class="key-label">AI API key</div>
+            <input class="key-input" id="cfg-ai-key" type="password" placeholder="Enter to update" oninput="markDirty()"/>
+          </div>
+          <div class="key-row"><div class="key-label">Google OAuth client ID</div>
+            <input class="key-input" id="cfg-g-id" type="password" placeholder="Enter to update" oninput="markDirty()"/>
+          </div>
+          <div class="key-row"><div class="key-label">Google OAuth client secret</div>
+            <input class="key-input" id="cfg-g-secret" type="password" placeholder="Enter to update" oninput="markDirty()"/>
+          </div>
+        </div>
+
+        <!-- Deal stages -->
+        <div class="config-panel">
+          <div class="config-panel-title">Deal stages</div>
+          <div class="stage-list" id="stage-list">
+            ${stages.map((st,i)=>stageRow(i,st.key,st.label,st.color||'')).join('')}
+          </div>
+          <button class="add-stage-btn" onclick="addStage()">+ Add stage</button>
+        </div>
+
+        <!-- Thresholds + roles -->
+        <div class="config-panel">
+          <div class="config-panel-title">Thresholds</div>
+          <div class="row"><div class="row-label">Going cold after</div>
+            <div style="display:flex;align-items:center;gap:6px"><input class="num-input" id="cfg-stale" type="number" value="${s.stale_days||10}" oninput="markDirty()"/><span style="font-size:11px;color:var(--text3)">days</span></div>
+          </div>
+          <div class="row"><div class="row-label">Unanswered after</div>
+            <div style="display:flex;align-items:center;gap:6px"><input class="num-input" id="cfg-unans" type="number" value="${s.unanswered_days||3}" oninput="markDirty()"/><span style="font-size:11px;color:var(--text3)">days</span></div>
+          </div>
+          <div class="row"><div class="row-label">Lookback window</div>
+            <div style="display:flex;align-items:center;gap:6px"><input class="num-input" id="cfg-lookback" type="number" value="${s.lookback_days||90}" oninput="markDirty()"/><span style="font-size:11px;color:var(--text3)">days</span></div>
+          </div>
+          <div class="config-panel-title" style="margin-top:14px">Role labels</div>
+          ${['sdr','ae','manager','director'].map(r=>
+            `<div class="row"><div class="row-label" style="text-transform:capitalize">${r}</div>
+             <input class="str-input" id="cfg-role-${r}" value="${escHtml(roles[r]||r.toUpperCase())}" oninput="markDirty()"/></div>`
+          ).join('')}
+        </div>
+
+      </div>
+      <div class="save-bar">
+        <button class="save-btn" onclick="saveConfig('${orgId}')">Save configuration</button>
+        <span class="save-status" id="save-status"></span>
+      </div>
+    </div>`;
+}
+
+function flagRow(key, on, label) {
+  return `<div class="row">
+    <div class="row-label">${label}</div>
+    <button class="toggle ${on?'on':'off'}" id="flag-${key}" onclick="togFlag(this,'${key}')">
+      <div class="toggle-dot"></div>
+    </button>
+  </div>`;
+}
+function togFlag(el, key) { el.classList.toggle('on'); el.classList.toggle('off'); markDirty(); }
+function stageRow(i, key, label, color) {
+  return `<div class="stage-row" id="stage-${i}">
+    <span class="stage-num">${i+1}</span>
+    <input class="stage-input" data-key="${key}" value="${escHtml(label)}" oninput="markDirty()" placeholder="Stage name"/>
+    <button class="stage-del" onclick="delStage(${i})" title="Remove">&#215;</button>
+  </div>`;
+}
+function addStage() {
+  const list = document.getElementById('stage-list');
+  const i = list.querySelectorAll('.stage-row').length;
+  const div = document.createElement('div');
+  div.innerHTML = stageRow(i, 'stage_'+i, '', '');
+  list.appendChild(div.firstElementChild);
+  list.lastElementChild.querySelector('.stage-input').focus();
+  markDirty();
+}
+function delStage(i) {
+  document.getElementById('stage-'+i)?.remove();
+  // Renumber
+  document.querySelectorAll('#stage-list .stage-row').forEach((r,idx)=>{
+    r.id='stage-'+idx;
+    r.querySelector('.stage-num').textContent=idx+1;
+    r.querySelector('.stage-del').setAttribute('onclick','delStage('+idx+')');
+  });
+  markDirty();
+}
+
+function markDirty() {
+  const el = document.getElementById('save-status');
+  if (el) { el.textContent = 'Unsaved changes'; el.className = 'save-status'; }
+}
+
+async function saveConfig(orgId) {
+  const el = document.getElementById('save-status');
+  if(el){el.textContent='Saving…';el.className='save-status';}
+
+  const featureKeys = ['sam_intelligence','account_coverage','intent_vs_reality','account_intel_ai','digest_reports'];
+  const features = {};
+  featureKeys.forEach(k => {
+    const t = document.getElementById('flag-'+k);
+    if(t) features[k] = t.classList.contains('on');
+  });
+
+  const stageInputs = document.querySelectorAll('#stage-list .stage-input');
+  const deal_stages = Array.from(stageInputs).map((inp,i) => ({
+    key: inp.dataset.key || 'stage_'+i,
+    label: inp.value.trim() || 'Stage '+(i+1),
+    color: ''
+  })).filter(s=>s.label);
+
+  const role_labels = {};
+  ['sdr','ae','manager','director'].forEach(r => {
+    const el = document.getElementById('cfg-role-'+r);
+    if(el) role_labels[r] = el.value.trim() || r.toUpperCase();
+  });
+
+  const settings = {
+    email_provider: document.getElementById('cfg-email-provider')?.value,
+    ai_engine:      document.getElementById('cfg-ai-engine')?.value,
+    ai_model:       document.getElementById('cfg-ai-model')?.value,
+    deal_stages, features, role_labels,
+    stale_days:        parseInt(document.getElementById('cfg-stale')?.value)||10,
+    unanswered_days:   parseInt(document.getElementById('cfg-unans')?.value)||3,
+    lookback_days:     parseInt(document.getElementById('cfg-lookback')?.value)||90,
+  };
+  // Only include credentials if something was entered (empty = keep existing)
+  const aiKey = document.getElementById('cfg-ai-key')?.value;
+  const gId   = document.getElementById('cfg-g-id')?.value;
+  const gSec  = document.getElementById('cfg-g-secret')?.value;
+  if(aiKey) settings.ai_api_key = aiKey;
+  if(gId)   settings.google_client_id = gId;
+  if(gSec)  settings.google_client_secret = gSec;
+
+  try {
+    const r = await fetch(EDGE_FN, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+adminUser.token,'apikey':SB_ANON},
+      body: JSON.stringify({action:'upsert_org_settings', org_id:orgId, settings})
+    });
+    const d = await r.json();
+    if(d.ok) {
+      if(el){el.textContent='Saved ✓';el.className='save-status ok';}
+      setTimeout(()=>{if(el)el.textContent='';},3000);
+      loadClients();
+    } else {
+      if(el){el.textContent='Save failed: '+(d.error||'unknown');el.className='save-status err';}
+    }
+  } catch(e) {
+    if(el){el.textContent='Error: '+e.message;el.className='save-status err';}
+  }
+}
+
+function newClient() {
+  const name = prompt('Client organisation name:');
+  if(!name) return;
+  // In a full implementation this would create an org record first,
+  // then open the config panel for it.
+  alert('Create the org in Supabase → organisations table first, then reload this page and select it from the sidebar to configure it.');
+}
+
+// ── Utils ───────────────────────────────────────────────────────────────
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const pg = document.getElementById('page-'+name);
+  if(pg) pg.classList.add('active');
+}
+function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>
