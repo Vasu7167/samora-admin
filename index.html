@@ -301,7 +301,7 @@ function showAddUserModal(orgId){
     <div class="f"><label>Temp password * (they can change later)</label><input id="mu-pass" type="text" value="${generatePass()}"/></div>
     <div class="grid2">
       <div class="f"><label>Name</label><input id="mu-name" placeholder="Full name"/></div>
-      <div class="f"><label>Role</label><select id="mu-role" class="sel" style="width:100%"><option value="sdr">SDR</option><option value="ae">AE</option><option value="member">Member</option><option value="manager">Manager</option><option value="director">Director</option><option value="executive">Executive</option></select></div>
+      <div class="f"><label>Role</label><select id="mu-role" class="sel" style="width:100%"><option value="sdr">SDR (Tier 1)</option><option value="ae">AE (Tier 1)</option><option value="manager">Manager (Tier 2)</option><option value="director">Director (Tier 3)</option><option value="executive">CXO (Tier 4)</option><option value="admin">Company Admin (Tier 5)</option></select></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" onclick="createUser('${orgId}')">Create user</button><button class="btn btn-outline" onclick="closeModal()">Cancel</button></div>
     <div class="msg" id="mu-msg"></div>
