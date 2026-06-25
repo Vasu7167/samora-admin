@@ -250,6 +250,7 @@ function renderOrgPage(org, users, products=[]){
     </div>
 
     <div class="grid2" style="margin-top:14px">
+      <div class="card">
         <div class="card-title">Thresholds</div>
         <div class="row"><div class="row-label">Going cold after</div><div style="display:flex;align-items:center;gap:6px"><input class="num" id="cfg-stale" type="number" value="${s.stale_days||10}" oninput="markDirty()"/><span style="font-size:11px;color:var(--text3)">days</span></div></div>
         <div class="row"><div class="row-label">Unanswered after</div><div style="display:flex;align-items:center;gap:6px"><input class="num" id="cfg-unans" type="number" value="${s.unanswered_days||3}" oninput="markDirty()"/><span style="font-size:11px;color:var(--text3)">days</span></div></div>
@@ -257,8 +258,35 @@ function renderOrgPage(org, users, products=[]){
         <div style="margin-top:12px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Role labels</div>
         ${['sdr','ae','manager','director'].map(r=>`<div class="row"><div class="row-label">${r}</div><input class="str" id="cfg-role-${r}" value="${esc(roles[r]||r.toUpperCase())}" oninput="markDirty()"/></div>`).join('')}
       </div>
+      <div class="card">
+        <div class="card-title">Revenue stream types</div>
+        <div class="card-sub">Define how this org classifies revenue. Reps pick from these when logging deal values. Drives pipeline filters and forecasting.</div>
+        <div id="stream-type-list" style="margin-top:8px">
+          ${(s.revenue_stream_types||[{key:'license_mrr',label:'License MRR',type:'MRR'},{key:'impl',label:'Implementation',type:'one_time'},{key:'support',label:'Support',type:'QRR'}]).map((st,i)=>`
+          <div class="stage-row" id="st-${i}" style="margin-bottom:6px">
+            <input class="stage-input" data-key="${esc(st.key||'stream_'+i)}" value="${esc(st.label)}" placeholder="Stream name" oninput="markDirty()" style="flex:1"/>
+            <select onchange="markDirty()" data-type="${esc(st.type||'MRR')}" style="width:80px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:4px;color:var(--text);font-size:11px;font-family:var(--sans)">
+              ${['MRR','QRR','ARR','one_time'].map(t=>`<option value="${t}" ${(st.type||'MRR')===t?'selected':''}>${t}</option>`).join('')}
+            </select>
+            <button class="stage-del" onclick="this.parentElement.remove();markDirty()">×</button>
+          </div>`).join('')}
+        </div>
+        <button onclick="addStreamType()" style="margin-top:6px;font-size:12px;padding:5px;border-radius:var(--r);border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;width:100%;font-family:var(--sans)">+ Add stream type</button>
+      </div>
     </div>
     <div class="save-bar"><button class="btn btn-sm" onclick="saveConfig('${org.org_id}')">Save configuration</button><span class="save-status" id="save-status"></span></div>`;
+}
+
+function addStreamType(){
+  const list=$('stream-type-list');if(!list)return;
+  const i=list.querySelectorAll('.stage-row').length;
+  const d=document.createElement('div');d.className='stage-row';d.id='st-'+i;d.style.marginBottom='6px';
+  d.innerHTML=`<input class="stage-input" data-key="stream_${i}" value="" placeholder="Stream name" oninput="markDirty()" style="flex:1"/>
+    <select onchange="markDirty()" data-type="MRR" style="width:80px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:4px;color:var(--text);font-size:11px;font-family:var(--sans)">
+      <option value="MRR">MRR</option><option value="QRR">QRR</option><option value="ARR">ARR</option><option value="one_time">One-time</option>
+    </select>
+    <button class="stage-del" onclick="this.parentElement.remove();markDirty()">×</button>`;
+  list.appendChild(d);d.querySelector('input').focus();markDirty();
 }
 
 function addStage(){
@@ -278,9 +306,14 @@ async function saveConfig(orgId){
   });
   const stageInputs=document.querySelectorAll('#stage-list .stage-input');
   const deal_stages=Array.from(stageInputs).map((inp,i)=>({key:inp.dataset.key||'stage_'+i,label:inp.value.trim()||'Stage '+(i+1),color:''})).filter(st=>st.label);
+  const streamRows=document.querySelectorAll('#stream-type-list .stage-row');
+  const revenue_stream_types=Array.from(streamRows).map((row,i)=>{
+    const inp=row.querySelector('input');const sel=row.querySelector('select');
+    return {key:inp?.dataset.key||'stream_'+i,label:inp?.value.trim()||'Stream '+(i+1),type:sel?.value||'MRR'};
+  }).filter(s=>s.label);
   const role_labels={};
   ['sdr','ae','manager','director'].forEach(r=>{const el=$('cfg-role-'+r);if(el)role_labels[r]=el.value.trim()||r.toUpperCase()});
-  const settings={email_provider:$('cfg-email')?.value,ai_engine:$('cfg-ai')?.value,deal_stages,features,role_labels,stale_days:parseInt($('cfg-stale')?.value)||10,unanswered_days:parseInt($('cfg-unans')?.value)||3,lookback_days:parseInt($('cfg-lookback')?.value)||90};
+  const settings={email_provider:$('cfg-email')?.value,ai_engine:$('cfg-ai')?.value,deal_stages,revenue_stream_types,features,role_labels,stale_days:parseInt($('cfg-stale')?.value)||10,unanswered_days:parseInt($('cfg-unans')?.value)||3,lookback_days:parseInt($('cfg-lookback')?.value)||90};
   const aiKey=$('cfg-ai-key')?.value;if(aiKey)settings.ai_api_key=aiKey;
   const gId=$('cfg-g-id')?.value;if(gId)settings.google_client_id=gId;
   const gSec=$('cfg-g-secret')?.value;if(gSec)settings.google_client_secret=gSec;
