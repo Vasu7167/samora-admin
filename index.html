@@ -172,11 +172,14 @@ async function selectOrg(orgId){
   activeOrg=orgId;renderSidebar();
   const org=orgs.find(o=>o.org_id===orgId);
   if(!org){$('main-area').innerHTML='<div class="empty">Org not found</div>';return}
-  const users=await edgeCall('admin_list_users',{org_id:orgId});
-  renderOrgPage(org,users.users||[]);
+  const [users, productsData] = await Promise.all([
+    edgeCall('admin_list_users',{org_id:orgId}),
+    edgeCall('get_products')
+  ]);
+  renderOrgPage(org, users.users||[], productsData.products||[]);
 }
 
-function renderOrgPage(org,users){
+function renderOrgPage(org, users, products=[]){
   const s=org.settings||{};
   const stages=s.deal_stages||[{key:'prospective',label:'Prospective'},{key:'value_prop',label:'Value Prop'},{key:'commercial',label:'Commercial'}];
   const features=s.features||{};
@@ -226,7 +229,27 @@ function renderOrgPage(org,users){
         <div id="stage-list">${stages.map((st,i)=>`<div class="stage-row" id="stg-${i}"><span class="stage-num">${i+1}</span><input class="stage-input" data-key="${st.key}" value="${esc(st.label)}" oninput="markDirty()"/><button class="stage-del" onclick="this.parentElement.remove();markDirty()">×</button></div>`).join('')}</div>
         <button onclick="addStage()" style="margin-top:6px;font-size:12px;padding:5px;border-radius:var(--r);border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;width:100%">+ Add stage</button>
       </div>
-      <div class="card">
+    </div>
+
+    <!-- Product catalog — full width -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+        Product catalog
+        <button class="btn btn-sm btn-outline" onclick="showAddProductModal('${org.org_id}')">+ Add product</button>
+      </div>
+      <div class="card-sub">What your org sells. Reps pick a product when logging opportunities. Keywords help AI map conversation signals to the right product.</div>
+      <div style="margin-top:10px">
+        ${products.length ? products.map(p => `<div style="background:var(--bg3);border-radius:var(--r);padding:10px 12px;margin-bottom:6px;display:flex;align-items:flex-start;gap:10px">
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">${esc(p.name)}${p.category?` <span style="font-size:10px;color:var(--text3);background:var(--surface);border-radius:10px;padding:1px 7px">${esc(p.category)}</span>`:''}</div>
+            ${p.description?`<div style="font-size:11px;color:var(--text3);margin-top:2px">${esc(p.description)}</div>`:''}
+            ${p.keywords?.length?`<div style="font-size:10px;color:var(--text3);margin-top:4px">Keywords: ${p.keywords.map(k=>`<span style="background:var(--surface2);border-radius:4px;padding:1px 5px;margin-right:3px">${esc(k)}</span>`).join('')}</div>`:''}</div>
+          <button onclick="deleteProduct('${p.id}','${org.org_id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">×</button>
+        </div>`).join('') : '<div style="font-size:12px;color:var(--text3);font-style:italic">No products yet.</div>'}
+      </div>
+    </div>
+
+    <div class="grid2" style="margin-top:14px">
         <div class="card-title">Thresholds</div>
         <div class="row"><div class="row-label">Going cold after</div><div style="display:flex;align-items:center;gap:6px"><input class="num" id="cfg-stale" type="number" value="${s.stale_days||10}" oninput="markDirty()"/><span style="font-size:11px;color:var(--text3)">days</span></div></div>
         <div class="row"><div class="row-label">Unanswered after</div><div style="display:flex;align-items:center;gap:6px"><input class="num" id="cfg-unans" type="number" value="${s.unanswered_days||3}" oninput="markDirty()"/><span style="font-size:11px;color:var(--text3)">days</span></div></div>
@@ -267,6 +290,38 @@ async function saveConfig(orgId){
 }
 
 // ── New Org Modal ──
+function showAddProductModal(orgId){
+  $('modal-root').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">
+    <h3>Add product / offering</h3>
+    <div class="f"><label>Product name *</label><input id="mp-name" placeholder="e.g. License Management, Field Sales App"/></div>
+    <div class="f"><label>Category (optional)</label><input id="mp-category" placeholder="e.g. Core, Add-on, Services"/></div>
+    <div class="f"><label>Description <span style="color:var(--text3);font-weight:400">(shown to AI for signal mapping)</span></label><textarea id="mp-desc" rows="3" placeholder="What does this product do? What problems does it solve?" style="font-size:13px;line-height:1.5"></textarea></div>
+    <div class="f"><label>Keywords <span style="color:var(--text3);font-weight:400">(comma-separated, used to map conversation signals)</span></label><input id="mp-keywords" placeholder="e.g. license, seat, user management, access control"/></div>
+    <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" onclick="saveProduct('${orgId}')">Add product</button><button class="btn btn-outline" onclick="closeModal()">Cancel</button></div>
+    <div class="msg" id="mp-msg"></div>
+  </div></div>`;
+}
+
+async function saveProduct(orgId){
+  const name=$('mp-name')?.value?.trim();
+  if(!name){$('mp-msg').textContent='Name required';return}
+  const keywords=($('mp-keywords')?.value||'').split(',').map(k=>k.trim()).filter(Boolean);
+  $('mp-msg').textContent='Saving…';$('mp-msg').className='msg ok';
+  const d=await edgeCall('upsert_product',{
+    name, category:$('mp-category')?.value?.trim()||null,
+    description:$('mp-desc')?.value?.trim()||null,
+    keywords, org_id:orgId
+  });
+  if(d.ok){closeModal();selectOrg(orgId);}
+  else{$('mp-msg').textContent='Error: '+(d.error||'unknown');$('mp-msg').className='msg';}
+}
+
+async function deleteProduct(productId, orgId){
+  if(!confirm('Remove this product? Existing opportunities linked to it will be kept.')) return;
+  await edgeCall('delete_product',{id:productId});
+  selectOrg(orgId);
+}
+
 function showNewOrgModal(){
   $('modal-root').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">
     <h3>Create new client</h3>
