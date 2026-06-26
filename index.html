@@ -221,6 +221,24 @@ function renderOrgPage(org, users, products=[]){
         <div class="row"><div class="row-label">Email provider</div><select class="sel" id="cfg-email" onchange="markDirty()"><option value="gmail" ${(s.email_provider||'gmail')==='gmail'?'selected':''}>Gmail</option><option value="outlook" ${s.email_provider==='outlook'?'selected':''}>Outlook</option><option value="both" ${s.email_provider==='both'?'selected':''}>Both</option></select></div>
         <div class="row"><div class="row-label">AI engine</div><select class="sel" id="cfg-ai" onchange="markDirty()"><option value="gemini" ${(s.ai_engine||'gemini')==='gemini'?'selected':''}>Gemini</option><option value="openai" ${s.ai_engine==='openai'?'selected':''}>OpenAI</option><option value="none" ${s.ai_engine==='none'?'selected':''}>None (SAM only)</option></select></div>
         <div style="margin-top:10px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">AI API key</div><input class="key-input" id="cfg-ai-key" type="password" placeholder="Enter to update" oninput="markDirty()"/></div>
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+          <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">Sequencing tool</div>
+          <div class="row"><div class="row-label">Provider</div>
+            <select class="sel" id="cfg-seq-provider" onchange="markDirty();toggleSeqFields()">
+              <option value="" ${!s.sequencing_provider?'selected':''}>None</option>
+              <option value="smartreach" ${s.sequencing_provider==='smartreach'?'selected':''}>SmartReach</option>
+              <option value="outreach" ${s.sequencing_provider==='outreach'?'selected':''}>Outreach</option>
+              <option value="apollo" ${s.sequencing_provider==='apollo'?'selected':''}>Apollo</option>
+              <option value="lemlist" ${s.sequencing_provider==='lemlist'?'selected':''}>Lemlist</option>
+              <option value="instantly" ${s.sequencing_provider==='instantly'?'selected':''}>Instantly</option>
+            </select>
+          </div>
+          <div id="seq-fields" style="display:${s.sequencing_provider?'block':'none'}">
+            <div style="margin-top:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">API Key</div><input class="key-input" id="cfg-seq-key" type="password" placeholder="${s.sequencing_api_key?'Saved — enter to update':'Enter API key'}" oninput="markDirty()"/></div>
+            <div style="margin-top:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">Team ID (if required)</div><input class="str" id="cfg-seq-team" value="${esc(s.sequencing_team_id||'')}" placeholder="e.g. team_xxxxx" oninput="markDirty()"/></div>
+            ${s.sequencing_synced_at?`<div style="font-size:11px;color:var(--text3);margin-top:6px">Last synced: ${new Date(s.sequencing_synced_at).toLocaleString()}</div>`:''}
+          </div>
+        </div>
         <div style="margin-top:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">Google OAuth Client ID</div><input class="key-input" id="cfg-g-id" type="password" placeholder="Enter to update" oninput="markDirty()"/></div>
         <div style="margin-top:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">Google OAuth Client Secret</div><input class="key-input" id="cfg-g-secret" type="password" placeholder="Enter to update" oninput="markDirty()"/></div>
       </div>
@@ -277,6 +295,7 @@ function renderOrgPage(org, users, products=[]){
     <div class="save-bar"><button class="btn btn-sm" onclick="saveConfig('${org.org_id}')">Save configuration</button><span class="save-status" id="save-status"></span></div>`;
 }
 
+function toggleSeqFields(){const v=$('cfg-seq-provider')?.value;const f=$('seq-fields');if(f)f.style.display=v?'block':'none';}
 function addStreamType(){
   const list=$('stream-type-list');if(!list)return;
   const i=list.querySelectorAll('.stage-row').length;
@@ -315,6 +334,11 @@ async function saveConfig(orgId){
   ['sdr','ae','manager','director'].forEach(r=>{const el=$('cfg-role-'+r);if(el)role_labels[r]=el.value.trim()||r.toUpperCase()});
   const settings={email_provider:$('cfg-email')?.value,ai_engine:$('cfg-ai')?.value,deal_stages,revenue_stream_types,features,role_labels,stale_days:parseInt($('cfg-stale')?.value)||10,unanswered_days:parseInt($('cfg-unans')?.value)||3,lookback_days:parseInt($('cfg-lookback')?.value)||90};
   const aiKey=$('cfg-ai-key')?.value;if(aiKey)settings.ai_api_key=aiKey;
+  // Sequencing provider
+  const seqProvider=$('cfg-seq-provider')?.value||null;
+  settings.sequencing_provider=seqProvider||null;
+  const seqKey=$('cfg-seq-key')?.value;if(seqKey)settings.sequencing_api_key=seqKey;
+  const seqTeam=$('cfg-seq-team')?.value;if(seqTeam)settings.sequencing_team_id=seqTeam;
   const gId=$('cfg-g-id')?.value;if(gId)settings.google_client_id=gId;
   const gSec=$('cfg-g-secret')?.value;if(gSec)settings.google_client_secret=gSec;
   const d=await edgeCall('upsert_org_settings',{org_id:orgId,settings});
