@@ -239,6 +239,22 @@ function renderOrgPage(org, users, products=[]){
             ${s.sequencing_synced_at?`<div style="font-size:11px;color:var(--text3);margin-top:6px">Last synced: ${new Date(s.sequencing_synced_at).toLocaleString()}</div>`:''}
           </div>
         </div>
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+          <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Notetaker integration</div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5">Direct API gives full transcripts, exact quotes and speaker sentiment — far richer than email summaries. Signals extracted via Gemini on every call.</div>
+          <div class="row"><div class="row-label">Provider</div>
+            <select class="sel" id="cfg-nt-provider" onchange="markDirty();toggleNtFields()">
+              <option value="" ${!s.notetaker_provider?'selected':''}>None (use email summaries)</option>
+              <option value="fireflies" ${s.notetaker_provider==='fireflies'?'selected':''}>Fireflies.ai</option>
+              <option value="fathom" ${s.notetaker_provider==='fathom'?'selected':''}>Fathom (coming)</option>
+              <option value="otter" ${s.notetaker_provider==='otter'?'selected':''}>Otter.ai (coming)</option>
+            </select>
+          </div>
+          <div id="nt-fields" style="display:${s.notetaker_provider?'block':'none'}">
+            <div style="margin-top:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">API Key</div><input class="key-input" id="cfg-nt-key" type="password" placeholder="${s.notetaker_api_key?'Saved — enter to update':'Enter API key'}" oninput="markDirty()"/></div>
+            <div style="font-size:10px;color:var(--text3);margin-top:5px">Fireflies: app.fireflies.ai → Settings → Integrations → API → Generate key</div>
+          </div>
+        </div>
         <div style="margin-top:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">Google OAuth Client ID</div><input class="key-input" id="cfg-g-id" type="password" placeholder="Enter to update" oninput="markDirty()"/></div>
         <div style="margin-top:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">Google OAuth Client Secret</div><input class="key-input" id="cfg-g-secret" type="password" placeholder="Enter to update" oninput="markDirty()"/></div>
       </div>
@@ -331,6 +347,7 @@ function renderOrgPage(org, users, products=[]){
 }
 
 function toggleSeqFields(){const v=$('cfg-seq-provider')?.value;const f=$('seq-fields');if(f)f.style.display=v?'block':'none';}
+function toggleNtFields(){const v=$('cfg-nt-provider')?.value;const f=$('nt-fields');if(f)f.style.display=v?'block':'none';}
 function addStreamType(){
   const list=$('stream-type-list');if(!list)return;
   const i=list.querySelectorAll('.stage-row').length;
@@ -370,6 +387,9 @@ async function saveConfig(orgId){
   const settings={email_provider:$('cfg-email')?.value,ai_engine:$('cfg-ai')?.value,deal_stages,revenue_stream_types,features,role_labels,stale_days:parseInt($('cfg-stale')?.value)||10,unanswered_days:parseInt($('cfg-unans')?.value)||3,lookback_days:parseInt($('cfg-lookback')?.value)||90};
   const aiKey=$('cfg-ai-key')?.value;if(aiKey)settings.ai_api_key=aiKey;
   // Sequencing provider
+  const ntProvider=$('cfg-nt-provider')?.value||null;
+  settings.notetaker_provider=ntProvider||null;
+  const ntKey=$('cfg-nt-key')?.value;if(ntKey)settings.notetaker_api_key=ntKey;
   const seqProvider=$('cfg-seq-provider')?.value||null;
   settings.sequencing_provider=seqProvider||null;
   const seqKey=$('cfg-seq-key')?.value;if(seqKey)settings.sequencing_api_key=seqKey;
