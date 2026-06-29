@@ -247,6 +247,41 @@ function renderOrgPage(org, users, products=[]){
         <div id="stage-list">${stages.map((st,i)=>`<div class="stage-row" id="stg-${i}"><span class="stage-num">${i+1}</span><input class="stage-input" data-key="${st.key}" value="${esc(st.label)}" oninput="markDirty()"/><button class="stage-del" onclick="this.parentElement.remove();markDirty()">×</button></div>`).join('')}</div>
         <button onclick="addStage()" style="margin-top:6px;font-size:12px;padding:5px;border-radius:var(--r);border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;width:100%">+ Add stage</button>
       </div>
+      <div class="card">
+        <div class="card-title">✦ ICP Definition</div>
+        <div class="card-sub">Define your Ideal Customer Profile. Samora uses Gemini to score every account against this — the ICP score badge appears on pipeline cards and guides prioritisation.</div>
+        ${(()=>{const icp=s.icp_definition||{};return`
+        <div style="margin-top:10px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:3px">Target industries (comma-separated)</div>
+          <input class="str" id="icp-industries" value="${esc((icp.target_industries||[]).join(', '))}" placeholder="FMCG, CPG, Food &amp; Beverage, Personal Care" oninput="markDirty()"/>
+        </div>
+        <div style="margin-top:8px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:3px">Target geographies (comma-separated)</div>
+          <input class="str" id="icp-geos" value="${esc((icp.target_geographies||[]).join(', '))}" placeholder="India, Middle East, Southeast Asia" oninput="markDirty()"/>
+        </div>
+        <div style="margin-top:8px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:3px">Target stakeholder titles (comma-separated)</div>
+          <input class="str" id="icp-stakeholders" value="${esc((icp.target_stakeholders||[]).join(', '))}" placeholder="VP Sales, Commercial Director, CTO, CMO" oninput="markDirty()"/>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <div style="flex:1">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:3px">Target company size</div>
+            <input class="str" id="icp-size" value="${esc(icp.target_company_size||'')}" placeholder="e.g. 500-50,000 employees" oninput="markDirty()"/>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:3px">Ideal deal size (USD)</div>
+            <input class="str" id="icp-deal-size" type="number" value="${icp.ideal_deal_size_usd||''}" placeholder="e.g. 50000" oninput="markDirty()"/>
+          </div>
+        </div>
+        <div style="margin-top:8px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:3px">Ideal use case</div>
+          <textarea class="str" id="icp-use-case" rows="2" placeholder="Field sales execution and retail visibility for enterprise FMCG brands…" oninput="markDirty()" style="resize:none;height:52px">${esc(icp.ideal_use_case||'')}</textarea>
+        </div>
+        <div style="margin-top:8px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:3px">Additional keywords (comma-separated)</div>
+          <input class="str" id="icp-keywords" value="${esc((icp.keywords||[]).join(', '))}" placeholder="retail execution, field force, outlet coverage" oninput="markDirty()"/>
+        </div>`;})()}
+      </div>
     </div>
 
     <!-- Product catalog — full width -->
@@ -339,6 +374,17 @@ async function saveConfig(orgId){
   settings.sequencing_provider=seqProvider||null;
   const seqKey=$('cfg-seq-key')?.value;if(seqKey)settings.sequencing_api_key=seqKey;
   const seqTeam=$('cfg-seq-team')?.value;if(seqTeam)settings.sequencing_team_id=seqTeam;
+  // ICP definition
+  const icpIndustries=($('icp-industries')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const icpGeos=($('icp-geos')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const icpStakeholders=($('icp-stakeholders')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const icpKeywords=($('icp-keywords')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const icpSize=$('icp-size')?.value||'';
+  const icpDealSize=parseFloat($('icp-deal-size')?.value)||null;
+  const icpUseCase=$('icp-use-case')?.value||'';
+  if(icpIndustries.length||icpGeos.length||icpUseCase){
+    settings.icp_definition={target_industries:icpIndustries,target_geographies:icpGeos,target_stakeholders:icpStakeholders,target_company_size:icpSize,ideal_deal_size_usd:icpDealSize,ideal_use_case:icpUseCase,keywords:icpKeywords};
+  }
   const gId=$('cfg-g-id')?.value;if(gId)settings.google_client_id=gId;
   const gSec=$('cfg-g-secret')?.value;if(gSec)settings.google_client_secret=gSec;
   const d=await edgeCall('upsert_org_settings',{org_id:orgId,settings});
