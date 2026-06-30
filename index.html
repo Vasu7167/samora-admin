@@ -246,13 +246,14 @@ function renderOrgPage(org, users, products=[]){
             <select class="sel" id="cfg-nt-provider" onchange="markDirty();toggleNtFields()">
               <option value="" ${!s.notetaker_provider?'selected':''}>None (use email summaries)</option>
               <option value="fireflies" ${s.notetaker_provider==='fireflies'?'selected':''}>Fireflies.ai</option>
+              <option value="read_ai" ${s.notetaker_provider==='read_ai'?'selected':''}>Read.ai</option>
               <option value="fathom" ${s.notetaker_provider==='fathom'?'selected':''}>Fathom (coming)</option>
               <option value="otter" ${s.notetaker_provider==='otter'?'selected':''}>Otter.ai (coming)</option>
             </select>
           </div>
           <div id="nt-fields" style="display:${s.notetaker_provider?'block':'none'}">
             <div style="margin-top:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">API Key</div><input class="key-input" id="cfg-nt-key" type="password" placeholder="${s.notetaker_api_key?'Saved — enter to update':'Enter API key'}" oninput="markDirty()"/></div>
-            <div style="font-size:10px;color:var(--text3);margin-top:5px">Fireflies: app.fireflies.ai → Settings → Integrations → API → Generate key</div>
+            <div style="font-size:10px;color:var(--text3);margin-top:5px">Fireflies: app.fireflies.ai → Settings → Integrations → API → Generate key<br>Read.ai: app.read.ai → Settings → API → Get access token</div>
           </div>
         </div>
         <div style="margin-top:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">Google OAuth Client ID</div><input class="key-input" id="cfg-g-id" type="password" placeholder="Enter to update" oninput="markDirty()"/></div>
