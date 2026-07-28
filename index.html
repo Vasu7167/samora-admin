@@ -175,7 +175,7 @@ async function selectOrg(orgId){
   const [users, productsData, kvData] = await Promise.all([
     edgeCall('admin_list_users',{org_id:orgId}),
     edgeCall('get_products'),
-    edgeCall('admin_get_org_settings',{org_id:orgId, keys:['health_score_weights','notification_rules','enrichment_apollo_key','enrichment_lusha_key','enrichment_hunter_key']})
+    edgeCall('admin_get_org_settings',{org_id:orgId, keys:['health_score_weights','notification_rules','enrichment_apollo_key','enrichment_lusha_key','enrichment_hunter_key','stakeholder_scout_profile']})
   ]);
   renderOrgPage(org, users.users||[], productsData.products||[], (kvData&&kvData.settings)||{});
 }
@@ -363,6 +363,11 @@ function renderOrgPage(org, users, products=[], kv={}){
       </div>
     </div>
     <div class="card" style="margin-top:14px">
+      <div class="card-title">✦ Prospect profile — who to hunt</div>
+      <div class="card-sub">The default people to scout at target accounts (Apollo / Lusha / Hunter). ICP above defines which <b>companies</b> to target; this defines which <b>people</b>. Reps can override per account in the app. Job titles drive the match, so be specific.</div>
+      ${renderProspectProfileHTML(kv)}
+    </div>
+    <div class="card" style="margin-top:14px">
       <div class="card-title">Notification rules</div>
       <div class="card-sub">Which push notifications this org sends, and when. Each person still opts in per device in the app.</div>
       <div id="nr-host">${renderNotifRulesHTML(kv)}</div>
@@ -413,6 +418,31 @@ function renderHealthWeightsHTML(kv){
   return rows.map(function(r){ return '<div class="row"><div class="row-label">'+r[1]+'</div><div style="display:flex;align-items:center;gap:6px">'+_nrNum('hw-'+r[0],d[r[0]])+'<span style="font-size:11px;color:var(--text3)">%</span></div></div>'; }).join('') +
     '<div style="font-size:11px;color:var(--text3);margin-top:6px">Total must equal 100.</div>';
 }
+var SCOUT_DEPTS = ['Sales','Marketing','Strategy','Finance','HR','Operations','IT','Product','Engineering'];
+var SCOUT_SENIORITIES = ['Mid','Senior','Leadership','CXO'];
+function _chipRow(group, values, selected){
+  return values.map(function(v){ var on=selected.indexOf(v)>-1;
+    return '<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:5px 10px;border-radius:16px;border:1px solid '+(on?'var(--gold)':'var(--border)')+';background:'+(on?'rgba(160,117,42,0.1)':'transparent')+';color:'+(on?'var(--gold)':'var(--text2)')+';cursor:pointer;margin:0 6px 6px 0"><input type="checkbox" data-group="'+group+'" value="'+v+'"'+(on?' checked':'')+' style="margin:0">'+v+'</label>';
+  }).join('');
+}
+function renderProspectProfileHTML(kv){
+  var p={}; try{ p=JSON.parse((kv||_kvCache).stakeholder_scout_profile||'{}'); }catch(e){}
+  var depts=Array.isArray(p.departments)?p.departments:['Sales','Marketing','Strategy'];
+  var sens=Array.isArray(p.seniorities)?p.seniorities:['Senior','Leadership','CXO'];
+  var titles=Array.isArray(p.jobTitles)?p.jobTitles:[];
+  var locs=Array.isArray(p.locations)?p.locations:[];
+  var inputStyle='width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-size:12px;font-family:var(--sans)';
+  return '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 6px">Job titles (primary — comma separated)</div>' +
+    '<textarea id="pp-titles" rows="2" placeholder="e.g. CFO, Chief Financial Officer, VP Finance, Finance Director, Head of Procurement, Owner" oninput="markDirty()" style="'+inputStyle+';resize:vertical;height:52px">'+esc(titles.join(', '))+'</textarea>' +
+    '<div style="font-size:10px;color:var(--text3);margin-top:4px">These match directly against real titles at the account. Leave blank to fall back to departments + seniority below.</div>' +
+    '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px">Departments</div>' +
+    '<div>'+_chipRow('pp-dept', SCOUT_DEPTS, depts)+'</div>' +
+    '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin:8px 0 6px">Seniority</div>' +
+    '<div>'+_chipRow('pp-sen', SCOUT_SENIORITIES, sens)+'</div>' +
+    '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">Locations (optional, comma separated)</div>' +
+    '<input id="pp-locs" value="'+esc(locs.join(', '))+'" placeholder="e.g. Italy, Europe" oninput="markDirty()" style="'+inputStyle+'"/>';
+}
+function _collectChips(group){ return Array.from(document.querySelectorAll('input[data-group="'+group+'"]:checked')).map(function(el){return el.value;}); }
 function renderNotifRulesHTML(kv){
   var cfg; try{ cfg=_mergeNR(JSON.parse((kv||_kvCache).notification_rules||'null')); }catch(e){ cfg=_mergeNR(null); }
   var days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -439,8 +469,11 @@ async function saveOrgPolicy(orgId){
     nr.quiet_hours={enabled:$('nr-quiet')?.checked,start:parseInt($('nr-quiet-start')?.value||'21',10),end:parseInt($('nr-quiet-end')?.value||'8',10)};
     nr.weekly_digest={enabled:$('nr-digest')?.checked,day:parseInt($('nr-digest-day')?.value||'1',10),hour:parseInt($('nr-digest-hour')?.value||'8',10)};
     NR_META.forEach(function(m){ var rc={enabled:$('nr-rule-'+m.key)?.checked}; m.params.forEach(function(p){ var el=$('nr-'+m.key+'-'+p.key); rc[p.key]=el?(parseInt(el.value,10)||0):p.def; }); nr.rules[m.key]=rc; });
+    // Prospect profile (who to hunt)
+    var csv=function(id){ return (($(id)?$(id).value:'')||'').split(',').map(function(x){return x.trim();}).filter(Boolean); };
+    var prospect={ departments:_collectChips('pp-dept'), seniorities:_collectChips('pp-sen'), jobTitles:csv('pp-titles'), locations:csv('pp-locs') };
     // Persist (parallel)
-    var jobs=[ edgeCall('admin_set_org_setting',{org_id:orgId,key:'health_score_weights',value:JSON.stringify(hw)}), edgeCall('admin_set_org_setting',{org_id:orgId,key:'notification_rules',value:JSON.stringify(nr)}) ];
+    var jobs=[ edgeCall('admin_set_org_setting',{org_id:orgId,key:'health_score_weights',value:JSON.stringify(hw)}), edgeCall('admin_set_org_setting',{org_id:orgId,key:'notification_rules',value:JSON.stringify(nr)}), edgeCall('admin_set_org_setting',{org_id:orgId,key:'stakeholder_scout_profile',value:JSON.stringify(prospect)}) ];
     ['apollo','lusha','hunter'].forEach(function(p){ var v=$('enr-'+p)?.value; if(v){ jobs.push(edgeCall('admin_set_org_setting',{org_id:orgId,key:'enrichment_'+p+'_key',value:v})); } });
     var results=await Promise.all(jobs);
     if(results.every(function(r){return r&&r.ok;})){ if(st){st.textContent='Saved ✓';st.className='save-status ok';} }
