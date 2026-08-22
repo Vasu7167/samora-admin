@@ -162,7 +162,13 @@ input,select,button,textarea{font-family:var(--font)}
 
 <div id="modal-root"></div>
 
+<!-- SheetJS reads the uploaded file. ExcelJS writes the download, because the
+     community build of SheetJS cannot write cell styling or data validation
+     (both are paid-tier features there) and the template needs a real Role
+     dropdown and coloured headers. Read and write therefore use different
+     libraries on purpose. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script>
 const SB_URL = localStorage.getItem('samora-admin-sb-url') || 'https://gowpuicpmrwsohongosf.supabase.co';
 const SB_ANON = localStorage.getItem('samora-admin-sb-anon') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdvd3B1aWNwbXJ3c29ob25nb3NmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzOTExMDgsImV4cCI6MjA5NTk2NzEwOH0.35CjODxyxOjAKp-xBOBx4oAXO_qjLyVttVaJEhp7YEg';
@@ -755,35 +761,127 @@ const XL_IMPORTABLE = ['users','products'];
 
 function _xlMsg(text, ok){ const m=$('xl-msg'); if(m){ m.textContent=text; m.className='msg'+(ok?' ok':''); } }
 
+// Roles Samora actually understands. An org's own internal job titles are a
+// different thing and belong in Full Name, which is why this is a closed
+// dropdown in the sheet rather than free text.
+const XL_ROLE_OPTIONS = ['sdr','ae','member','manager','director','executive','admin'];
+const XL_HDR_BG = 'FF0F0E0B';  // brand canvas, near black
+const XL_HDR_FG = 'FFC49A2A';  // brand gold
+
+// Shown only when an org has no competitors of its own yet. Three that are
+// plausible for almost any B2B seller, so the format is obvious. Microsoft
+// Dynamics is spelled in full deliberately: a bare "dynamics" would match
+// ordinary sentences like "market dynamics" in transcripts.
+const XL_COMPETITOR_EXAMPLES = [
+  { 'Competitor Name':'Salesforce',         'Aliases':'SFDC; Sales Cloud',         'Domain':'salesforce.com',         'Category':'CRM', 'Notes':'Example row, edit or delete', 'Active':'Yes' },
+  { 'Competitor Name':'Zoho',               'Aliases':'Zoho CRM',                  'Domain':'zoho.com',               'Category':'CRM', 'Notes':'Example row, edit or delete', 'Active':'Yes' },
+  { 'Competitor Name':'Microsoft Dynamics', 'Aliases':'MS Dynamics; Dynamics 365', 'Domain':'dynamics.microsoft.com', 'Category':'CRM', 'Notes':'Use the full name, not "dynamics"', 'Active':'Yes' }
+];
+
+// Example column on Company Info, so an admin filling this in for the first
+// time can see the expected shape and separator rather than guessing.
+const XL_COMPANY_EXAMPLES = {
+  'Ideal Use Case':      'Field sales execution and retail visibility for enterprise FMCG brands',
+  'Target Industries':   'FMCG; CPG; Food & Beverage; Personal Care',
+  'Target Geographies':  'India; Middle East; Southeast Asia',
+  'Target Stakeholders': 'VP Sales; Commercial Director; CTO; CMO',
+  'Target Company Size': '500-50,000 employees',
+  'Ideal Deal Size USD': '50000',
+  'Keywords':            'retail execution; field force; outlet coverage'
+};
+
 async function downloadOrgWorkbook(orgId){
   const btn=$('xl-dl-btn'); if(btn){btn.disabled=true;btn.textContent='Preparing…';}
   try{
     const d=await edgeCall('admin_export_config',{});
     if(!d||!d.ok){ _xlMsg('Export failed: '+((d&&d.error)||'admin_export_config action not available')); return; }
-    const wb=XLSX.utils.book_new();
+
+    const wb=new ExcelJS.Workbook();
+    wb.creator='Samora Admin';
+    wb.created=new Date();
     let n=0;
+
     (d.sheet_order||Object.keys(XL_SHEETS)).forEach(function(key){
-      const rows=d[key];
+      let rows=d[key];
       if(!Array.isArray(rows)) return;
-      const ws=rows.length ? XLSX.utils.json_to_sheet(rows) : XLSX.utils.aoa_to_sheet([_xlHeadersFor(key)]);
-      XLSX.utils.book_append_sheet(wb, ws, XL_SHEETS[key]||key);
+
+      // Company Info gains an Example column the export does not send.
+      if(key==='company_info'){
+        rows=rows.map(function(r){ return { Field:r.Field, Value:r.Value, Example:XL_COMPANY_EXAMPLES[r.Field]||'' }; });
+      }
+      // Competitors: show three examples when the org has none, so the sheet
+      // is self-explanatory instead of an empty grid.
+      if(key==='competitors' && !rows.length) rows=XL_COMPETITOR_EXAMPLES;
+
+      _xlAddSheet(wb, key, XL_SHEETS[key]||key, rows);
       n++;
     });
+
     const org=(orgs.find(function(o){return o.org_id===orgId;})||{});
     const safe=String(org.display_name||org.name||'org').replace(/[^a-z0-9]+/gi,'-').toLowerCase();
-    XLSX.writeFile(wb, 'samora-setup-'+safe+'-'+new Date().toISOString().slice(0,10)+'.xlsx');
+    const buf=await wb.xlsx.writeBuffer();
+    const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='samora-setup-'+safe+'-'+new Date().toISOString().slice(0,10)+'.xlsx';
+    a.click();
+    setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
     _xlMsg('Downloaded '+n+' sheets. Edit and upload the same file to apply changes.', true);
   }catch(e){ _xlMsg('Export failed: '+e.message); }
   finally{ if(btn){btn.disabled=false;btn.textContent='Download setup';} }
 }
-// Headers for an empty sheet. Must match what admin_export_config emits when
-// rows exist, or a round trip breaks.
+
+// One styled sheet: black header band with gold bold text, frozen so it stays
+// visible while scrolling, plus a real Role dropdown on the Users sheet.
+function _xlAddSheet(wb, key, sheetName, rows){
+  const headers=_xlHeadersFor(key);
+  const ws=wb.addWorksheet(sheetName);
+  ws.columns=headers.map(function(h){ return { header:h, key:h, width:Math.max(14, Math.min(48, h.length+12)) }; });
+
+  rows.forEach(function(r){
+    const o={}; headers.forEach(function(h){ o[h]=(r[h]!==undefined&&r[h]!==null)?r[h]:''; });
+    ws.addRow(o);
+  });
+
+  const hr=ws.getRow(1);
+  hr.height=20;
+  hr.eachCell(function(cell){
+    cell.fill={ type:'pattern', pattern:'solid', fgColor:{ argb:XL_HDR_BG } };
+    cell.font={ bold:true, color:{ argb:XL_HDR_FG }, size:11 };
+    cell.alignment={ vertical:'middle', horizontal:'left' };
+    cell.border={ bottom:{ style:'thin', color:{ argb:'FF3A3830' } } };
+  });
+  ws.views=[{ state:'frozen', ySplit:1 }];
+
+  // Role dropdown. Applied well past the current row count so rows the admin
+  // adds or pastes inherit it too, and rejected outright on a bad value
+  // rather than failing later at import time.
+  if(key==='users'){
+    const col=headers.indexOf('Role')+1;
+    if(col>0){
+      const letter=ws.getColumn(col).letter;
+      for(let r=2;r<=500;r++){
+        ws.getCell(letter+r).dataValidation={
+          type:'list', allowBlank:true,
+          formulae:['"'+XL_ROLE_OPTIONS.join(',')+'"'],
+          showErrorMessage:true, errorStyle:'error',
+          errorTitle:'Invalid role',
+          error:'Pick one of: '+XL_ROLE_OPTIONS.join(', ')+'. Your own internal job titles go in Full Name, not here.'
+        };
+      }
+    }
+  }
+  return ws;
+}
+
+// Headers for each sheet. Must match what admin_export_config emits when rows
+// exist, or a round trip breaks.
 function _xlHeadersFor(key){
   return ({
     users:['Email','Full Name','Phone','Role','Manager Email','Active','Assigned Accounts'],
     products:['Product Name','Category','Description','Keywords'],
     competitors:['Competitor Name','Aliases','Domain','Category','Notes','Active'],
-    company_info:['Field','Value'],
+    company_info:['Field','Value','Example'],
     thresholds:['Setting','Value','Unit'],
     notification_rules:['Rule','Enabled','Min Value (K)','Days'],
     revenue_streams:['Stream','Label','Type','Active']
