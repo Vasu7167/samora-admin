@@ -778,6 +778,26 @@ const XL_COMPETITOR_EXAMPLES = [
   { 'Competitor Name':'Microsoft Dynamics', 'Aliases':'MS Dynamics; Dynamics 365', 'Domain':'dynamics.microsoft.com', 'Category':'CRM', 'Notes':'Use the full name, not "dynamics"', 'Active':'Yes' }
 ];
 
+// Revenue stream types Samora understands. Same closed-list logic as Role:
+// the system reasons about these four, so they are a dropdown rather than
+// free text, whatever an org calls the stream itself in the Label column.
+const XL_STREAM_TYPES = ['MRR','QRR','ARR','one_time'];
+
+// Shown when an org has none yet. Deliberately generic product categories
+// rather than anything sector specific, since a tenant could be selling
+// anything.
+const XL_PRODUCT_EXAMPLES = [
+  { 'Product Name':'ERP',                    'Category':'Core',     'Description':'Example row, edit or delete', 'Keywords':'finance; inventory; manufacturing' },
+  { 'Product Name':'CRM',                    'Category':'Core',     'Description':'Example row, edit or delete', 'Keywords':'pipeline; contacts; forecasting' },
+  { 'Product Name':'Procurement Management', 'Category':'Add-on',   'Description':'Example row, edit or delete', 'Keywords':'sourcing; vendors; purchase orders' }
+];
+
+const XL_STREAM_EXAMPLES = [
+  { 'Stream':'license_mrr', 'Label':'License MRR',    'Type':'MRR',      'Active':'Yes' },
+  { 'Stream':'impl',        'Label':'Implementation', 'Type':'one_time', 'Active':'Yes' },
+  { 'Stream':'support',     'Label':'Support',        'Type':'QRR',      'Active':'Yes' }
+];
+
 // Example column on Company Info, so an admin filling this in for the first
 // time can see the expected shape and separator rather than guessing.
 const XL_COMPANY_EXAMPLES = {
@@ -809,9 +829,12 @@ async function downloadOrgWorkbook(orgId){
       if(key==='company_info'){
         rows=rows.map(function(r){ return { Field:r.Field, Value:r.Value, Example:XL_COMPANY_EXAMPLES[r.Field]||'' }; });
       }
-      // Competitors: show three examples when the org has none, so the sheet
-      // is self-explanatory instead of an empty grid.
-      if(key==='competitors' && !rows.length) rows=XL_COMPETITOR_EXAMPLES;
+      // Examples only when the org has nothing of its own, so the sheet is
+      // self-explanatory instead of an empty grid. Never mixed in alongside
+      // real data, where they would look like real rows.
+      if(key==='competitors'      && !rows.length) rows=XL_COMPETITOR_EXAMPLES;
+      if(key==='products'         && !rows.length) rows=XL_PRODUCT_EXAMPLES;
+      if(key==='revenue_streams'  && !rows.length) rows=XL_STREAM_EXAMPLES;
 
       _xlAddSheet(wb, key, XL_SHEETS[key]||key, rows);
       n++;
@@ -853,22 +876,66 @@ function _xlAddSheet(wb, key, sheetName, rows){
   });
   ws.views=[{ state:'frozen', ySplit:1 }];
 
-  // Role dropdown. Applied well past the current row count so rows the admin
-  // adds or pastes inherit it too, and rejected outright on a bad value
-  // rather than failing later at import time.
+  // Closed-list dropdowns. Applied well past the current row count so rows
+  // the admin adds or pastes inherit them too, and rejected at entry rather
+  // than failing later at import time.
+  const listCol=function(headerName, options, title, help){
+    const col=headers.indexOf(headerName)+1;
+    if(col<1) return;
+    const letter=ws.getColumn(col).letter;
+    for(let r=2;r<=500;r++){
+      ws.getCell(letter+r).dataValidation={
+        type:'list', allowBlank:true,
+        formulae:['"'+options.join(',')+'"'],
+        showErrorMessage:true, errorStyle:'error',
+        errorTitle:title, error:help
+      };
+    }
+  };
+
   if(key==='users'){
-    const col=headers.indexOf('Role')+1;
-    if(col>0){
-      const letter=ws.getColumn(col).letter;
-      for(let r=2;r<=500;r++){
+    listCol('Role', XL_ROLE_OPTIONS, 'Invalid role',
+      'Pick one of: '+XL_ROLE_OPTIONS.join(', ')+'. Your own internal job titles go in Full Name, not here.');
+  }
+
+  if(key==='revenue_streams'){
+    // Same reasoning as Role: Samora reasons about these four types, so they
+    // are a closed list. What the org CALLS the stream is free text in Label.
+    listCol('Type', XL_STREAM_TYPES, 'Invalid stream type',
+      'Pick one of: '+XL_STREAM_TYPES.join(', ')+'. Your own name for the stream goes in Label.');
+  }
+
+  // Health weights must total exactly 100, the same rule saveOrgPolicy
+  // enforces in the app. In a spreadsheet that rule is invisible until an
+  // import fails, so it is made visible here: each value is constrained to
+  // 0-100, and a live TOTAL row shows the sum as it is edited.
+  if(key==='thresholds' && rows.length){
+    const vcol=headers.indexOf('Value')+1;
+    if(vcol>0){
+      const letter=ws.getColumn(vcol).letter;
+      const first=2, last=rows.length+1;
+      for(let r=first;r<=last;r++){
         ws.getCell(letter+r).dataValidation={
-          type:'list', allowBlank:true,
-          formulae:['"'+XL_ROLE_OPTIONS.join(',')+'"'],
+          type:'whole', operator:'between', formulae:[0,100], allowBlank:false,
           showErrorMessage:true, errorStyle:'error',
-          errorTitle:'Invalid role',
-          error:'Pick one of: '+XL_ROLE_OPTIONS.join(', ')+'. Your own internal job titles go in Full Name, not here.'
+          errorTitle:'Out of range',
+          error:'Each weight is 0 to 100, and all five must add up to exactly 100.'
         };
       }
+      const totalRow=ws.addRow({});
+      totalRow.getCell(1).value='TOTAL (must equal 100)';
+      totalRow.getCell(vcol).value={ formula:'SUM('+letter+first+':'+letter+last+')' };
+      totalRow.getCell(1).font={ bold:true };
+      totalRow.getCell(vcol).font={ bold:true };
+      // Turns red the moment the sum is anything other than 100, so the
+      // admin sees the problem while editing rather than on upload.
+      ws.addConditionalFormatting({
+        ref: letter+totalRow.number+':'+letter+totalRow.number,
+        rules: [{
+          type:'cellIs', operator:'notEqual', formulae:['100'], priority:1,
+          style:{ font:{ color:{ argb:'FFC0523F' }, bold:true } }
+        }]
+      });
     }
   }
   return ws;
@@ -1011,10 +1078,10 @@ function downloadImportResults(){
 function showAddProductModal(orgId){
   $('modal-root').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">
     <h3>Add product / offering</h3>
-    <div class="f"><label>Product name *</label><input id="mp-name" placeholder="e.g. License Management, Field Sales App"/></div>
+    <div class="f"><label>Product name *</label><input id="mp-name" placeholder="e.g. ERP, CRM, Procurement Management"/></div>
     <div class="f"><label>Category (optional)</label><input id="mp-category" placeholder="e.g. Core, Add-on, Services"/></div>
     <div class="f"><label>Description <span style="color:var(--text3);font-weight:400">(shown to AI for signal mapping)</span></label><textarea id="mp-desc" rows="3" placeholder="What does this product do? What problems does it solve?" style="font-size:13px;line-height:1.5"></textarea></div>
-    <div class="f"><label>Keywords <span style="color:var(--text3);font-weight:400">(comma-separated, used to map conversation signals)</span></label><input id="mp-keywords" placeholder="e.g. license, seat, user management, access control"/></div>
+    <div class="f"><label>Keywords <span style="color:var(--text3);font-weight:400">(comma-separated, used to map conversation signals)</span></label><input id="mp-keywords" placeholder="e.g. sourcing, vendors, purchase orders"/></div>
     <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" onclick="saveProduct('${orgId}')">Add product</button><button class="btn btn-outline" onclick="closeModal()">Cancel</button></div>
     <div class="msg" id="mp-msg"></div>
   </div></div>`;
