@@ -110,6 +110,10 @@ input,select,button,textarea{font-family:var(--font)}
 .user-info{flex:1;min-width:0}
 .user-name{font-size:13px;font-weight:500}
 .user-email{font-size:11px;color:var(--text3)}
+/* A removed person stays listed but visibly inert, so the org's history
+   is still legible without them looking like an active seat. */
+.user-row.is-removed{opacity:.55}
+.btn-remove:hover{border-color:var(--coral);color:var(--coral)}
 .user-role{font-size:10px;padding:2px 8px;border-radius:var(--r-sm);background:var(--surface);color:var(--text2);border:1px solid var(--border)}
 
 /* Per-section save bar. Sticky, and it states its own scope so it is never
@@ -276,6 +280,9 @@ async function selectOrg(orgId){
 }
 
 function renderOrgPage(org, users, products=[], kv={}){
+  // Kept so the remove modal can offer the other active members as
+  // inheritors without a second fetch.
+  window._lastUsers = users || [];
   const s=org.settings||{};
   const stages=s.deal_stages||[{key:'prospective',label:'Prospective'},{key:'value_prop',label:'Value Prop'},{key:'commercial',label:'Commercial'}];
   const features=s.features||{};
@@ -300,14 +307,18 @@ function renderOrgPage(org, users, products=[], kv={}){
         <div class="card-title">Team <button class="btn btn-sm btn-outline" onclick="showAddUserModal('${org.org_id}')">+ Add rep</button></div>
         <div class="card-sub">Everyone with access to this organisation. Assign accounts to control what each rep sees. To add many at once, use Bulk setup.</div>
         <div id="user-list">
-          ${users.length?users.map(u=>`<div class="user-row">
+          ${users.length?users.map(u=>`<div class="user-row${u.is_active===false?' is-removed':''}">
             <div class="user-avatar">${esc((u.name||u.email||'?').slice(0,2).toUpperCase())}</div>
             <div class="user-info">
               <div class="user-name">${esc(u.name||u.email)}</div>
               <div class="user-email">${esc(u.email)} · ${u.account_count||0} accounts</div>
             </div>
             <span class="user-role">${esc(u.role||'member')}</span>
-            <button class="btn btn-sm btn-outline" onclick="showAssignAccountsModal('${org.org_id}','${u.user_id}','${esc(u.name||u.email)}')">Assign accounts</button>
+            ${u.is_active===false
+              ? `<span class="pill pill-gray">Removed</span>
+                 <button class="btn btn-sm btn-outline" onclick="reactivateUser('${org.org_id}','${u.user_id}','${esc(u.name||u.email)}')">Restore</button>`
+              : `<button class="btn btn-sm btn-outline" onclick="showAssignAccountsModal('${org.org_id}','${u.user_id}','${esc(u.name||u.email)}')">Assign accounts</button>
+                 <button class="btn btn-sm btn-outline btn-remove" onclick="showRemoveUserModal('${org.org_id}','${u.user_id}','${esc(u.name||u.email)}',${u.account_count||0})" title="Revoke access, keep their history">Remove</button>`}
           </div>`).join(''):'<div class="empty">No users yet. Add reps to get started, or upload a list from Bulk setup.</div>'}
         </div>
       </div>
@@ -1185,6 +1196,59 @@ async function assignAccounts(orgId,userId){
 }
 
 function closeModal(){$('modal-root').innerHTML=''}
+
+// ── Remove a person ────────────────────────────────────────────────────────
+// Deactivation, not deletion. They own accounts, and their tasks, wins and
+// attribution feed team rollups and coverage: dropping the row would silently
+// change historical numbers that were correct when reported. So access is
+// revoked, the record stays, and anything they own is handed over first.
+function showRemoveUserModal(orgId, userId, userName, accountCount){
+  const others = (window._lastUsers||[]).filter(u => u.user_id !== userId && u.is_active !== false);
+  const needsHandover = (accountCount||0) > 0;
+  const picker = needsHandover
+    ? (others.length
+        ? `<div class="f"><label>Hand their ${accountCount} account${accountCount!==1?'s':''} to *</label>
+             <select id="ru-owner" class="sel" style="width:100%">
+               <option value="">Choose a person…</option>
+               ${others.map(u=>`<option value="${u.user_id}">${esc(u.name||u.email)}</option>`).join('')}
+             </select></div>`
+        : `<div class="msg">There is nobody else active to inherit these accounts. Add someone first.</div>`)
+    : '';
+  $('modal-root').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">
+    <h3>Remove ${esc(userName)}</h3>
+    <div class="card-sub">Their access is revoked immediately. Tasks, wins and attribution are kept, so past reporting stays correct. You can restore them later.</div>
+    ${needsHandover ? `<div class="msg" style="text-align:left;color:var(--amber)">They own ${accountCount} account${accountCount!==1?'s':''}. Pick who inherits before removing, so no pipeline is left without an owner.</div>` : ''}
+    ${picker}
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-danger" onclick="removeUser('${orgId}','${userId}')" ${needsHandover&&!others.length?'disabled':''}>Remove access</button>
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button></div>
+    <div class="msg" id="ru-msg"></div>
+  </div></div>`;
+}
+
+async function removeUser(orgId, userId){
+  const sel = $('ru-owner');
+  if (sel && !sel.value) { $('ru-msg').textContent = 'Choose who inherits their accounts first.'; return; }
+  $('ru-msg').textContent = 'Removing…'; $('ru-msg').className = 'msg ok';
+  const d = await edgeCall('admin_deactivate_user', {
+    org_id: orgId, user_id: userId, reassign_to: sel ? sel.value : null
+  });
+  if (d && d.ok) { closeModal(); selectOrg(orgId); return; }
+  // The 409 case: the action found accounts the UI did not know about.
+  if (d && d.needs_reassignment) {
+    $('ru-msg').textContent = d.error || 'They still own accounts. Reload and try again.';
+  } else {
+    $('ru-msg').textContent = 'Error: ' + ((d && d.error) || 'admin_deactivate_user action not available');
+  }
+  $('ru-msg').className = 'msg';
+}
+
+async function reactivateUser(orgId, userId, userName){
+  if (!confirm('Restore access for ' + userName + '? Accounts reassigned when they were removed stay with their new owner.')) return;
+  const d = await edgeCall('admin_reactivate_user', { org_id: orgId, user_id: userId });
+  if (d && d.ok) selectOrg(orgId);
+  else alert('Could not restore: ' + ((d && d.error) || 'action not available'));
+}
 </script>
 </body>
 </html>
