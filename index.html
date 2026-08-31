@@ -748,7 +748,17 @@ async function saveConfig(orgId){
   const icpSize=$('icp-size')?.value||'';
   const icpDealSize=parseFloat($('icp-deal-size')?.value)||null;
   const icpUseCase=$('icp-use-case')?.value||'';
-  if(icpIndustries.length||icpGeos.length||icpUseCase){
+  // The guard used to be (industries || geos || useCase), so filling in ONLY
+  // target stakeholders, or only keywords, or only company size, silently
+  // dropped the whole ICP: it was never added to the payload, nothing was
+  // sent, and the page still said "Saved" because the request itself
+  // succeeded. It then vanished on refresh.
+  //
+  // That is exactly the shape a services or events business fills in first:
+  // they know WHO they sell to long before they can name an industry.
+  const icpHasAnything = icpIndustries.length || icpGeos.length || icpStakeholders.length
+    || icpKeywords.length || !!icpUseCase || !!icpSize || icpDealSize !== null;
+  if(icpHasAnything){
     settings.icp_definition={target_industries:icpIndustries,target_geographies:icpGeos,target_stakeholders:icpStakeholders,target_company_size:icpSize,ideal_deal_size_usd:icpDealSize,ideal_use_case:icpUseCase,keywords:icpKeywords};
   }
   const gId=$('cfg-g-id')?.value;if(gId)settings.google_client_id=gId;
