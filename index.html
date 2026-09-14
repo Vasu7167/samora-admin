@@ -776,9 +776,11 @@ const XL_SHEETS = {
   company_info:'Company Info', thresholds:'Thresholds',
   notification_rules:'Notification Rules', revenue_streams:'Revenue Streams'
 };
-// Competitors are export-only until upsert_competitor exists. Add it here
-// once that action lands.
-const XL_IMPORTABLE = ['users','products'];
+// Every sheet imports now. admin_bulk_import writes each one to its real
+// home: products and users to their tables, competitors to org_competitors,
+// ICP and revenue streams to the wide org_settings row, thresholds and
+// notification rules to org_kv.
+const XL_IMPORTABLE = ['users','products','competitors','company_info','thresholds','notification_rules','revenue_streams'];
 
 function _xlMsg(text, ok){ const m=$('xl-msg'); if(m){ m.textContent=text; m.className='msg'+(ok?' ok':''); } }
 
@@ -1000,87 +1002,74 @@ function handleWorkbookUpload(ev, orgId){
   };
   reader.readAsArrayBuffer(file);
 }
-// Nothing is written until the admin sees exactly what will happen.
-function showImportPreview(parsed, orgId, sheetNames){
-  const v=validateImport(parsed);
-  const counts=XL_IMPORTABLE.map(function(k){
-    if(!parsed[k]) return '';
-    return '<div style="display:flex;justify-content:space-between;padding:4px 0"><span>'+XL_SHEETS[k]+'</span><strong>'+parsed[k].length+' row'+(parsed[k].length===1?'':'s')+'</strong></div>';
-  }).join('');
-  const skipped=(sheetNames||[]).filter(function(n){
-    return Object.keys(XL_SHEETS).some(function(k){ return XL_SHEETS[k]===n && XL_IMPORTABLE.indexOf(k)<0; });
-  });
-  const errHtml=v.errors.length
-    ? '<div style="margin-top:10px;font-size:12px;color:var(--coral)"><strong>'+v.errors.length+' row'+(v.errors.length===1?'':'s')+' will be skipped:</strong><div style="max-height:120px;overflow:auto;margin-top:4px">'+v.errors.map(function(x){return '<div>'+esc(x)+'</div>';}).join('')+'</div></div>' : '';
-  const skipHtml=skipped.length
-    ? '<div style="margin-top:10px;font-size:11px;color:var(--text3)">Not imported (export only for now): '+esc(skipped.join(', '))+'</div>' : '';
+// Nothing is written until the admin sees exactly what will happen. The
+// preview is a real dry run against the edge action, not a second copy of the
+// validation rules that could drift from the real one.
+async function showImportPreview(parsed, orgId, sheetNames){
+  window._xlPending = { parsed: parsed, orgId: orgId };
+  $('modal-root').innerHTML='<div class="modal-bg"><div class="modal">'+
+    '<h3>Checking the file</h3><div class="card-sub">Nothing has been changed yet.</div></div></div>';
+
+  let d;
+  try{ d = await edgeCall('admin_bulk_import', { org_id: orgId, sheets: parsed, dry_run: true }); }
+  catch(e){ d = { ok:false, error:e.message }; }
+
+  if(!d || !d.ok){
+    $('modal-root').innerHTML='<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">'+
+      '<h3>Could not read that file</h3>'+
+      '<div style="font-size:12px;color:var(--coral);margin-top:8px">'+esc((d&&d.error)||'admin_bulk_import action not available. Deploy admin_bulk_import_patch.ts first.')+'</div>'+
+      '<div style="margin-top:16px"><button class="btn btn-outline" onclick="closeModal()">Close</button></div></div></div>';
+    return;
+  }
+
+  const res = d.results || [];
+  const bad = res.filter(function(r){ return r.Result === 'Invalid'; });
+  const good = res.filter(function(r){ return r.Result === 'Will import'; });
+
+  // One line per sheet, counting only what will actually be written.
+  const bySheet = {};
+  good.forEach(function(r){ bySheet[r.Sheet] = (bySheet[r.Sheet]||0) + 1; });
+  const counts = Object.keys(bySheet).map(function(sh){
+    return '<div style="display:flex;justify-content:space-between;padding:4px 0"><span>'+esc(sh)+'</span><strong>'+bySheet[sh]+' row'+(bySheet[sh]===1?'':'s')+'</strong></div>';
+  }).join('') || '<div style="color:var(--text3)">Nothing in this file will be imported.</div>';
+
+  const errHtml = bad.length
+    ? '<div style="margin-top:10px;font-size:12px;color:var(--coral)"><strong>'+bad.length+' row'+(bad.length===1?'':'s')+' will be skipped:</strong>'+
+      '<div style="max-height:120px;overflow:auto;margin-top:4px">'+bad.map(function(x){ return '<div>'+esc(x.Sheet+' '+x.Item+': '+x.Detail)+'</div>'; }).join('')+'</div></div>'
+    : '';
+
   $('modal-root').innerHTML='<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">'+
     '<h3>Review before applying</h3>'+
     '<div class="card-sub">Nothing has been changed yet. This is what the upload will do.</div>'+
-    '<div style="margin-top:10px;font-size:13px">'+counts+'</div>'+errHtml+skipHtml+
+    '<div style="margin-top:10px;font-size:13px">'+counts+'</div>'+errHtml+
     '<div style="margin-top:10px;font-size:11px;color:var(--text3)">New users get a generated temporary password. You can download those once, on the results screen.</div>'+
     '<div style="display:flex;gap:8px;margin-top:16px">'+
-      '<button class="btn" onclick="applyImport(\''+orgId+'\')">Apply '+v.validCount+' rows</button>'+
+      '<button class="btn" id="xl-apply-btn" onclick="applyImport()">Apply '+good.length+' rows</button>'+
       '<button class="btn btn-outline" onclick="closeModal()">Cancel</button></div>'+
     '<div class="msg" id="xl-apply-msg"></div></div></div>';
-  window._xlPending=v.clean;
 }
-function validateImport(parsed){
-  const ROLES=['sdr','ae','member','manager','director','executive','admin'];
-  const errors=[], clean={users:[],products:[],competitors:[]};
-  (parsed.users||[]).forEach(function(r,i){
-    const email=String(r['Email']||'').trim().toLowerCase();
-    const role=String(r['Role']||'').trim().toLowerCase();
-    if(!email||email.indexOf('@')<0){ errors.push('Users row '+(i+2)+': missing or invalid email'); return; }
-    if(role&&ROLES.indexOf(role)<0){ errors.push('Users row '+(i+2)+': role "'+role+'" is not one of '+ROLES.join(', ')); return; }
-    clean.users.push({ email:email, name:String(r['Full Name']||'').trim(), phone:String(r['Phone']||'').trim(),
-      role:role||'member', manager_email:String(r['Manager Email']||'').trim().toLowerCase(),
-      active:String(r['Active']||'Yes').trim().toLowerCase()!=='no',
-      accounts:String(r['Assigned Accounts']||'').split(';').map(function(s){return s.trim();}).filter(Boolean) });
-  });
-  (parsed.products||[]).forEach(function(r,i){
-    const name=String(r['Product Name']||'').trim();
-    if(!name){ errors.push('Products row '+(i+2)+': missing product name'); return; }
-    clean.products.push({ name:name, category:String(r['Category']||'').trim(), description:String(r['Description']||'').trim(),
-      keywords:String(r['Keywords']||'').split(';').map(function(s){return s.trim();}).filter(Boolean) });
-  });
-  return { clean:clean, errors:errors, validCount:clean.users.length+clean.products.length };
-}
-// One row at a time through the EXISTING actions, so an imported row hits the
-// same validation and side effects as a form-entered one.
-async function applyImport(orgId){
-  const data=window._xlPending; if(!data) return;
-  const results=[]; let done=0;
-  const total=data.users.length+data.products.length;
-  const setMsg=function(t){ const m=$('xl-apply-msg'); if(m){m.textContent=t;m.className='msg ok';} };
 
-  for(const p of data.products){
-    setMsg('Applying products… '+(++done)+'/'+total);
-    try{ const d=await edgeCall('upsert_product',{org_id:orgId,name:p.name,category:p.category,description:p.description,keywords:p.keywords});
-      results.push({Sheet:'Products',Item:p.name,Result:(d&&d.ok)?'Created/updated':'Failed',Detail:(d&&d.ok)?'':((d&&d.error)||'unknown')});
-    }catch(e){ results.push({Sheet:'Products',Item:p.name,Result:'Failed',Detail:e.message}); }
+// One call. The edge action owns ordering (reference data before users) and
+// reports a row per item, so nothing here needs to know the write order.
+async function applyImport(){
+  const p = window._xlPending; if(!p) return;
+  const btn = $('xl-apply-btn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Applying…'; }
+  const m = $('xl-apply-msg'); if(m){ m.textContent = 'Writing. Do not close this window.'; m.className = 'msg ok'; }
+
+  let d;
+  try{ d = await edgeCall('admin_bulk_import', { org_id: p.orgId, sheets: p.parsed }); }
+  catch(e){ d = { ok:false, error:e.message }; }
+
+  if(!d || !d.ok){
+    if(m){ m.textContent = 'Error: ' + ((d&&d.error)||'unknown'); m.className = 'msg'; }
+    if(btn){ btn.disabled = false; btn.textContent = 'Retry'; }
+    return;
   }
-  for(const u of data.users){
-    setMsg('Applying users… '+(++done)+'/'+total);
-    const pass=generatePass();
-    try{
-      const d=await edgeCall('admin_create_user',{org_id:orgId,email:u.email,password:pass,name:u.name,role:u.role});
-      if(d&&d.ok){
-        results.push({Sheet:'Users',Item:u.email,Result:'Created',Detail:'Temp password: '+pass});
-        if(u.accounts.length&&d.user_id){
-          try{ await edgeCall('admin_assign_accounts',{org_id:orgId,user_id:d.user_id,accounts:u.accounts.map(function(a){return{name:a,domain:null,region:null};})}); }
-          catch(_e){ results.push({Sheet:'Users',Item:u.email,Result:'Partial',Detail:'User created but account assignment failed'}); }
-        }
-      } else {
-        const already=/exist|already|duplicate/i.test((d&&d.error)||'');
-        results.push({Sheet:'Users',Item:u.email,Result:already?'Skipped':'Failed',Detail:already?'User already exists':((d&&d.error)||'unknown')});
-      }
-    }catch(e){ results.push({Sheet:'Users',Item:u.email,Result:'Failed',Detail:e.message}); }
-  }
-  showImportResults(results, orgId);
+  showImportResults(d.results || [], p.orgId);
 }
 function showImportResults(results, orgId){
-  const ok=results.filter(function(r){return r.Result==='Created'||r.Result==='Created/updated';}).length;
+  const ok=results.filter(function(r){return r.Result==='Created'||r.Result==='Created/updated'||r.Result==='Updated'||r.Result==='Saved';}).length;
   const failed=results.filter(function(r){return r.Result==='Failed';}).length;
   const skipped=results.filter(function(r){return r.Result==='Skipped';}).length;
   window._xlResults=results;
