@@ -297,7 +297,7 @@ async function selectOrg(orgId){
   if(!org){$('main-area').innerHTML='<div class="empty">Org not found</div>';return}
   const [users, productsData, kvData] = await Promise.all([
     edgeCall('admin_list_users',{org_id:orgId}),
-    edgeCall('get_products'),
+    edgeCall('get_products',{org_id:orgId}),
     edgeCall('admin_get_org_settings',{org_id:orgId, keys:['health_score_weights','notification_rules','enrichment_apollo_key','enrichment_lusha_key','enrichment_hunter_key','stakeholder_scout_profile']})
   ]);
   renderOrgPage(org, users.users||[], productsData.products||[], (kvData&&kvData.settings)||{});
@@ -472,7 +472,23 @@ function renderOrgPage(org, users, products=[], kv={}){
         <div class="card">
           <div class="card-title">Enrichment keys (org-wide)</div>
           <div class="card-sub">Used for contact scouting. Reps can still override with personal keys.</div>
-          ${['apollo','lusha','hunter'].map(function(p){ var has = kv['enrichment_'+p+'_key']; return '<div style="margin-top:8px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px;text-transform:capitalize">'+p+'</div><input class="key-input" id="enr-'+p+'" type="password" placeholder="'+(has?'Saved, enter to update':'Enter API key')+'" oninput="markDirty()"/></div>'; }).join('')}
+          ${['apollo','lusha','hunter'].map(function(p){
+            var has = !!kv['enrichment_'+p+'_key'];
+            // "Saved, enter to update" could not express "this key is wrong,
+            // take it out". A connected key now says so, and can be removed.
+            return '<div style="margin-top:8px">'+
+              '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
+                '<span style="font-size:11px;color:var(--text3);text-transform:capitalize">'+p+'</span>'+
+                (has
+                  ? '<span style="font-size:11px;color:var(--green);display:inline-flex;align-items:center;gap:4px">'+
+                      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>'+
+                      'Connected</span>'+
+                    '<button onclick="clearEnrichmentKey(\''+p+'\',\''+org.org_id+'\')" style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--text3);border-radius:var(--r-sm);padding:2px 9px;font-size:11px;cursor:pointer">Disconnect</button>'
+                  : '<span style="font-size:11px;color:var(--text3)">Not connected</span>')+
+              '</div>'+
+              '<input class="key-input" id="enr-'+p+'" type="password" placeholder="'+(has?'Enter a new key to replace it':'Enter API key')+'" oninput="markDirty()"/>'+
+            '</div>';
+          }).join('')}
         </div>
         <div class="card">
           <div class="card-title">Core providers</div>
@@ -555,6 +571,17 @@ function renderOrgPage(org, users, products=[], kv={}){
 
   restoreSection();
   loadCompetitors(org.org_id);
+}
+
+
+// ── Enrichment keys ────────────────────────────────────────────────────────
+async function clearEnrichmentKey(provider, orgId){
+  if(!confirm('Remove the organisation-wide '+provider+' key? Reps with their own key keep using theirs.')) return;
+  try{
+    const d = await edgeCall('clear_enrichment_key', { provider: provider, scope: 'org', org_id: orgId });
+    if(d && d.ok){ selectOrg(orgId); }
+    else alert('Could not remove the key: ' + ((d&&d.error)||'unknown error'));
+  }catch(e){ alert('Could not remove the key: ' + e.message); }
 }
 
 // ── Competitors ────────────────────────────────────────────────────────────
