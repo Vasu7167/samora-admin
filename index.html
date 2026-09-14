@@ -174,6 +174,30 @@ input,select,button,textarea{font-family:var(--font)}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script>
+// FEATURE FLAGS, declared ONCE and used by both the renderer and the save.
+//
+// They used to be a hardcoded array in two places, and the two had drifted:
+// `deal_signals` shipped in the edge function's defaults and `discovery_mode`
+// gates discover_accounts and commit_discovery, but NEITHER was rendered here.
+//
+// That was not merely a missing toggle. saveConfig rebuilt `features` from the
+// rendered list and sent the whole object, so any flag this panel did not know
+// about was WIPED the next time anyone pressed Save on the Company tab. A
+// platform admin turning discovery_mode on in SQL would have lost it the first
+// time someone edited an unrelated setting.
+const FEATURE_FLAGS = ['sam_intelligence','account_coverage','intent_vs_reality',
+                       'account_intel_ai','digest_reports','deal_signals','discovery_mode'];
+const FEATURE_LABELS = {
+  sam_intelligence:  'SAM Intelligence',
+  account_coverage:  'Coverage tracking',
+  intent_vs_reality: 'Intent vs Reality',
+  account_intel_ai:  'AI Intel (Gemini)',
+  digest_reports:    'Digest reports',
+  deal_signals:      'Deal signals',
+  discovery_mode:    'Discovery Mode (AI company finder)'
+};
+</script>
+<script>
 const SB_URL = localStorage.getItem('samora-admin-sb-url') || 'https://gowpuicpmrwsohongosf.supabase.co';
 const SB_ANON = localStorage.getItem('samora-admin-sb-anon') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdvd3B1aWNwbXJ3c29ob25nb3NmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzOTExMDgsImV4cCI6MjA5NTk2NzEwOH0.35CjODxyxOjAKp-xBOBx4oAXO_qjLyVttVaJEhp7YEg';
 const EDGE = SB_URL + '/functions/v1/sam-gmail-signals';
@@ -286,6 +310,7 @@ function renderOrgPage(org, users, products=[], kv={}){
   const s=org.settings||{};
   const stages=s.deal_stages||[{key:'prospective',label:'Prospective'},{key:'value_prop',label:'Value Prop'},{key:'commercial',label:'Commercial'}];
   const features=s.features||{};
+  window.__orgFeatures = features;   // kept so saveConfig can merge, not replace
   const roles=s.role_labels||{};
   const icp=s.icp_definition||{};
   _kvCache = kv || {};
@@ -523,7 +548,7 @@ function renderOrgPage(org, users, products=[], kv={}){
       <div class="card">
         <div class="card-title">Feature flags</div>
         <div class="card-sub">Turn whole capabilities on or off for this organisation.</div>
-        ${['sam_intelligence','account_coverage','intent_vs_reality','account_intel_ai','digest_reports'].map(f=>`<div class="row"><div class="row-label">${({sam_intelligence:'SAM Intelligence',account_coverage:'Coverage tracking',intent_vs_reality:'Intent vs Reality',account_intel_ai:'AI Intel (Gemini)',digest_reports:'Digest reports'})[f]||f}</div><button class="toggle ${features[f]!==false?'on':'off'}" id="flag-${f}" onclick="this.classList.toggle('on');this.classList.toggle('off');markDirty()"><div class="toggle-dot"></div></button></div>`).join('')}
+        ${FEATURE_FLAGS.map(f=>`<div class="row"><div class="row-label">${FEATURE_LABELS[f]||f}</div><button class="toggle ${features[f]!==false?'on':'off'}" id="flag-${f}" onclick="this.classList.toggle('on');this.classList.toggle('off');markDirty()"><div class="toggle-dot"></div></button></div>`).join('')}
       </div>
       ${saveBar('feature flags', "saveConfig('"+org.org_id+"')", 'save-status-flags')}
     </div>`;
@@ -719,9 +744,13 @@ function markDirty(){ setSaveStatus('Unsaved changes',''); }
 
 async function saveConfig(orgId){
   setSaveStatus('Saving…','');
-  const features={};
-  ['sam_intelligence','account_coverage','intent_vs_reality','account_intel_ai','digest_reports'].forEach(k=>{
-    const t=$('flag-'+k);if(t)features[k]=t.classList.contains('on');
+  // Start from what the org ALREADY has, then overlay only the toggles this
+  // panel actually rendered. A flag added by a future release, or set directly
+  // in SQL, survives a save from an older panel instead of being silently
+  // deleted by it.
+  const features = Object.assign({}, (window.__orgFeatures || {}));
+  FEATURE_FLAGS.forEach(k=>{
+    const t=$('flag-'+k); if(t) features[k]=t.classList.contains('on');
   });
   const stageInputs=document.querySelectorAll('#stage-list .stage-input');
   const deal_stages=Array.from(stageInputs).map((inp,i)=>({key:inp.dataset.key||'stage_'+i,label:inp.value.trim()||'Stage '+(i+1),color:''})).filter(st=>st.label);
