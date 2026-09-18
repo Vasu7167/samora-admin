@@ -298,7 +298,7 @@ async function selectOrg(orgId){
   const [users, productsData, kvData] = await Promise.all([
     edgeCall('admin_list_users',{org_id:orgId}),
     edgeCall('get_products',{org_id:orgId}),
-    edgeCall('admin_get_org_settings',{org_id:orgId, keys:['health_score_weights','notification_rules','enrichment_apollo_key','enrichment_lusha_key','enrichment_hunter_key','stakeholder_scout_profile']})
+    edgeCall('admin_get_org_settings',{org_id:orgId, keys:['health_score_weights','notification_rules','enrichment_apollo_key','enrichment_lusha_key','enrichment_hunter_key','stakeholder_scout_profile','scout_batch_size']})
   ]);
   renderOrgPage(org, users.users||[], productsData.products||[], (kvData&&kvData.settings)||{});
 }
@@ -446,6 +446,15 @@ function renderOrgPage(org, users, products=[], kv={}){
         ${renderHealthWeightsHTML(kv)}
       </div>
       <div class="card">
+        <div class="card-title">Scouting</div>
+        <div class="card-sub">How many contacts one click of Scout reveals. Each revealed contact costs one enrichment credit, so this is the dial between a fast list and a careful spend.</div>
+        <div style="display:flex;align-items:center;gap:8px;margin:8px 0 14px">
+          <input type="number" id="scout-batch" min="1" max="25" value="${esc(String(kv.scout_batch_size || 10))}" style="width:70px;padding:6px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:2px;color:var(--text);font-family:var(--sans);font-size:13px">
+          <span style="font-size:12px;color:var(--text3)">contacts per click, 1 to 25</span>
+          <button class="btn btn-sm btn-outline" onclick="saveScoutBatch('${org.org_id}')">Save</button>
+          <span id="scout-batch-msg" style="font-size:12px;color:var(--text3)"></span>
+        </div>
+
         <div class="card-title">Thresholds</div>
         <div class="card-sub">When Samora treats a deal as cold or unanswered, and how far back signal history is read.</div>
         <div class="row"><div class="row-label">Going cold after</div><div style="display:flex;align-items:center;gap:6px"><input class="num" id="cfg-stale" type="number" value="${s.stale_days||10}" oninput="markDirty()"/><span class="row-sub">days</span></div></div>
@@ -582,6 +591,16 @@ async function clearEnrichmentKey(provider, orgId){
     if(d && d.ok){ selectOrg(orgId); }
     else alert('Could not remove the key: ' + ((d&&d.error)||'unknown error'));
   }catch(e){ alert('Could not remove the key: ' + e.message); }
+}
+
+async function saveScoutBatch(orgId){
+  const el = $('scout-batch'); const msg = $('scout-batch-msg');
+  const n = Math.max(1, Math.min(25, parseInt(el && el.value, 10) || 10));
+  if (el) el.value = String(n);
+  if (msg) { msg.textContent = 'Saving…'; msg.style.color = 'var(--text3)'; }
+  const d = await edgeCall('admin_set_org_kv', { org_id: orgId, key: 'scout_batch_size', value: String(n) });
+  if (d && d.ok) { if (msg) { msg.textContent = 'Saved'; msg.style.color = 'var(--green, #4a7)'; } }
+  else if (msg) { msg.textContent = 'Error: ' + ((d && d.error) || 'admin_set_org_kv not available'); msg.style.color = 'var(--coral)'; }
 }
 
 // ── Competitors ────────────────────────────────────────────────────────────
