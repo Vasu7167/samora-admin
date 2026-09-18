@@ -298,7 +298,7 @@ async function selectOrg(orgId){
   const [users, productsData, kvData] = await Promise.all([
     edgeCall('admin_list_users',{org_id:orgId}),
     edgeCall('get_products',{org_id:orgId}),
-    edgeCall('admin_get_org_settings',{org_id:orgId, keys:['health_score_weights','notification_rules','enrichment_apollo_key','enrichment_lusha_key','enrichment_hunter_key','stakeholder_scout_profile','scout_batch_size']})
+    edgeCall('admin_get_org_settings',{org_id:orgId, keys:['health_score_weights','notification_rules','enrichment_apollo_key','enrichment_lusha_key','enrichment_hunter_key','stakeholder_scout_profile','scout_batch_size','campaign_goal_templates']})
   ]);
   renderOrgPage(org, users.users||[], productsData.products||[], (kvData&&kvData.settings)||{});
 }
@@ -446,6 +446,31 @@ function renderOrgPage(org, users, products=[], kv={}){
         ${renderHealthWeightsHTML(kv)}
       </div>
       <div class="card">
+        <div class="card-title">Campaign goal templates</div>
+        <div class="card-sub">The pitches this organisation runs again and again. A rep picks one instead of retyping it, so the same campaign reads the same way every time. One per line, as <b>Label | the goal itself</b>.</div>
+        <textarea id="goal-templates" rows="5" placeholder="Loyalty pilot | Introduce our QR based retailer loyalty programme and book a 20 minute discovery call&#10;Anti-counterfeit | Open a conversation about grey market and counterfeit exposure, ask for a 20 minute call" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:2px;color:var(--text);font-family:var(--sans);font-size:12px;line-height:1.6"></textarea>
+        <div style="display:flex;align-items:center;gap:8px;margin:8px 0 14px">
+          <button class="btn btn-sm btn-outline" onclick="saveGoalTemplates('${org.org_id}')">Save templates</button>
+          <span id="goal-templates-msg" style="font-size:12px;color:var(--text3)"></span>
+        </div>
+
+        <div class="card-title">Case studies</div>
+        <div class="card-sub">Published proof a rep can cite and link to. Industries and keywords decide which campaigns it is offered for; the link is what the reader clicks.</div>
+        <div id="case-study-list" style="font-size:12px;color:var(--text3);margin:6px 0">Loading…</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+          <input id="cs-title" placeholder="Title, e.g. KEI Industries, electrician loyalty" style="padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:2px;color:var(--text);font-size:12px">
+          <input id="cs-client" placeholder="Client name" style="padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:2px;color:var(--text);font-size:12px">
+          <input id="cs-headline" placeholder="The claim in one line, e.g. 38% more electricians scanning" style="padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:2px;color:var(--text);font-size:12px">
+          <input id="cs-url" placeholder="Link to the case study" style="padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:2px;color:var(--text);font-size:12px">
+          <input id="cs-industries" placeholder="Industries, semicolon separated" style="padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:2px;color:var(--text);font-size:12px">
+          <input id="cs-keywords" placeholder="Keywords, semicolon separated" style="padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:2px;color:var(--text);font-size:12px">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin:8px 0 14px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text3)"><input type="checkbox" id="cs-public" checked style="width:14px;height:14px;accent-color:var(--gold)"> Client may be named publicly</label>
+          <button class="btn btn-sm btn-outline" onclick="addCaseStudy('${org.org_id}')">Add case study</button>
+          <span id="cs-msg" style="font-size:12px;color:var(--text3)"></span>
+        </div>
+
         <div class="card-title">Scouting</div>
         <div class="card-sub">How many contacts one click of Scout reveals. Each revealed contact costs one enrichment credit, so this is the dial between a fast list and a careful spend.</div>
         <div style="display:flex;align-items:center;gap:8px;margin:8px 0 14px">
@@ -580,6 +605,8 @@ function renderOrgPage(org, users, products=[], kv={}){
 
   restoreSection();
   loadCompetitors(org.org_id);
+  _renderGoalTemplates(kv);
+  loadCaseStudies(org.org_id);
 }
 
 
@@ -591,6 +618,69 @@ async function clearEnrichmentKey(provider, orgId){
     if(d && d.ok){ selectOrg(orgId); }
     else alert('Could not remove the key: ' + ((d&&d.error)||'unknown error'));
   }catch(e){ alert('Could not remove the key: ' + e.message); }
+}
+
+// ── Campaign goal templates ─────────────────────────────────────
+// Stored as "Label | goal" lines because that is what an admin can edit in
+// ten seconds without a row builder, and parsed into the JSON the app reads.
+function _renderGoalTemplates(kv){
+  const el = $('goal-templates'); if (!el) return;
+  let list = [];
+  try { list = JSON.parse(kv.campaign_goal_templates || '[]'); } catch(_e) { list = []; }
+  el.value = (Array.isArray(list) ? list : []).map(function(t){ return (t.label||'') + ' | ' + (t.goal||''); }).join('\n');
+}
+async function saveGoalTemplates(orgId){
+  const el = $('goal-templates'), msg = $('goal-templates-msg');
+  const list = String(el && el.value || '').split('\n').map(function(line){
+    const i = line.indexOf('|');
+    if (i < 0) { const g = line.trim(); return g ? { label: g.slice(0, 40), goal: g } : null; }
+    const label = line.slice(0, i).trim(), goal = line.slice(i + 1).trim();
+    return (label && goal) ? { label: label, goal: goal } : null;
+  }).filter(Boolean);
+  if (msg) { msg.textContent = 'Saving…'; msg.style.color = 'var(--text3)'; }
+  const d = await edgeCall('admin_set_org_kv', { org_id: orgId, key: 'campaign_goal_templates', value: JSON.stringify(list) });
+  if (msg) {
+    if (d && d.ok) { msg.textContent = list.length + ' template' + (list.length===1?'':'s') + ' saved'; msg.style.color = 'var(--green, #4a7)'; }
+    else { msg.textContent = 'Error: ' + ((d && d.error) || 'admin_set_org_kv not available'); msg.style.color = 'var(--coral)'; }
+  }
+}
+
+// ── Case studies ───────────────────────────────────────────────
+async function loadCaseStudies(orgId){
+  const host = $('case-study-list'); if (!host) return;
+  const d = await edgeCall('get_success_stories', { org_id: orgId });
+  const rows = (d && d.stories) || [];
+  if (!rows.length) { host.innerHTML = 'None yet. The first one added here becomes citable proof in every campaign this organisation runs.'; return; }
+  host.innerHTML = rows.map(function(s){
+    const inds = (s.industries||[]).join(', ');
+    const kws = (s.keywords||[]).join(', ');
+    return '<div style="padding:6px 0;border-bottom:1px solid var(--border)">' +
+      '<div style="font-size:13px;color:var(--text)">' + esc(s.title||'(untitled)') +
+        (s.url ? ' <a href="'+esc(s.url)+'" target="_blank" rel="noopener" style="color:var(--gold);font-size:11px">link</a>' : '') + '</div>' +
+      '<div style="font-size:11px;color:var(--text3)">' + esc(s.headline||'') +
+        (inds ? ' · ' + esc(inds) : '') + (kws ? ' · ' + esc(kws) : '') + '</div></div>';
+  }).join('');
+}
+async function addCaseStudy(orgId){
+  const msg = $('cs-msg');
+  const v = function(id){ const e = $(id); return e ? e.value.trim() : ''; };
+  const list = function(id){ return v(id).split(';').map(function(x){ return x.trim(); }).filter(Boolean); };
+  if (!v('cs-title') || !v('cs-headline')) {
+    if (msg) { msg.textContent = 'Title and the one-line claim are both required.'; msg.style.color = 'var(--coral)'; }
+    return;
+  }
+  if (msg) { msg.textContent = 'Saving…'; msg.style.color = 'var(--text3)'; }
+  const d = await edgeCall('save_success_story', {
+    org_id: orgId, title: v('cs-title'), client_name: v('cs-client') || null,
+    headline: v('cs-headline'), url: v('cs-url') || null,
+    industries: list('cs-industries'), keywords: list('cs-keywords'),
+    usable_publicly: !!($('cs-public') && $('cs-public').checked)
+  });
+  if (d && d.ok) {
+    ['cs-title','cs-client','cs-headline','cs-url','cs-industries','cs-keywords'].forEach(function(id){ const e = $(id); if (e) e.value = ''; });
+    if (msg) { msg.textContent = 'Added'; msg.style.color = 'var(--green, #4a7)'; }
+    loadCaseStudies(orgId);
+  } else if (msg) { msg.textContent = 'Error: ' + ((d && d.error) || 'unknown'); msg.style.color = 'var(--coral)'; }
 }
 
 async function saveScoutBatch(orgId){
