@@ -113,6 +113,19 @@ input,select,button,textarea{font-family:var(--font)}
 /* A removed person stays listed but visibly inert, so the org's history
    is still legible without them looking like an active seat. */
 .user-row.is-removed{opacity:.55}
+/* Archived people are history, not seats: folded away under one line so the
+   team list shows who is actually on the team. */
+.archived-wrap{margin-top:10px;border-top:1px solid var(--border);padding-top:8px}
+.archived-wrap summary{cursor:pointer;font-size:12px;color:var(--text3);padding:4px 0;list-style:none}
+.archived-wrap summary::-webkit-details-marker{display:none}
+.archived-wrap summary:before{content:'\25B8  '}
+.archived-wrap[open] summary:before{content:'\25BE  '}
+.ap-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}
+.ap-table th{text-align:left;color:var(--text3);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--border)}
+.ap-table td{padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+.ap-ok{color:var(--green)}.ap-warn{color:var(--amber,#d4a017)}.ap-err{color:var(--coral)}
+.ap-pass{font-family:Menlo,Consolas,monospace;font-size:12px;background:var(--bg3);padding:1px 6px;border-radius:2px}
+.modal.wide{width:720px}
 .btn-remove:hover{border-color:var(--coral);color:var(--coral)}
 .user-role{font-size:10px;padding:2px 8px;border-radius:var(--r-sm);background:var(--surface);color:var(--text2);border:1px solid var(--border)}
 
@@ -157,6 +170,7 @@ input,select,button,textarea{font-family:var(--font)}
       <div class="sb-section">Clients</div>
       <div id="sidebar-clients"></div>
       <div style="padding:8px 16px"><button class="btn btn-sm" onclick="showNewOrgModal()" style="width:100%">+ New client</button></div>
+      <div style="padding:0 16px 8px"><button class="btn btn-sm btn-outline" onclick="showAccessRequests()" style="width:100%" id="sb-requests">Access requests</button></div>
     </div>
     <div class="main" id="main-area">
       <div class="empty">Select a client from the sidebar or create a new one</div>
@@ -329,22 +343,31 @@ function renderOrgPage(org, users, products=[], kv={}){
     <!-- ══ PEOPLE ══ -->
     <div class="section" id="sec-people">
       <div class="card">
-        <div class="card-title">Team <button class="btn btn-sm btn-outline" onclick="showAddUserModal('${org.org_id}')">+ Add rep</button></div>
-        <div class="card-sub">Everyone with access to this organisation. Assign accounts to control what each rep sees. To add many at once, use Bulk setup.</div>
+        <div class="card-title">Team <button class="btn btn-sm btn-outline" onclick="showAddPeopleModal('${org.org_id}')">+ Add people</button></div>
+        <div class="card-sub">Everyone with access to this organisation. New people get a welcome email from Sam with their login and a temporary password they must change on first sign-in. Assign accounts to control what each rep sees.</div>
         <div id="user-list">
-          ${users.length?users.map(u=>`<div class="user-row${u.is_active===false?' is-removed':''}">
-            <div class="user-avatar">${esc((u.name||u.email||'?').slice(0,2).toUpperCase())}</div>
-            <div class="user-info">
-              <div class="user-name">${esc(u.name||u.email)}</div>
-              <div class="user-email">${esc(u.email)} · ${u.account_count||0} accounts</div>
-            </div>
-            <span class="user-role">${esc(u.role||'member')}</span>
-            ${u.is_active===false
-              ? `<span class="pill pill-gray">Removed</span>
-                 <button class="btn btn-sm btn-outline" onclick="reactivateUser('${org.org_id}','${u.user_id}','${esc(u.name||u.email)}')">Restore</button>`
-              : `<button class="btn btn-sm btn-outline" onclick="showAssignAccountsModal('${org.org_id}','${u.user_id}','${esc(u.name||u.email)}')">Assign accounts</button>
-                 <button class="btn btn-sm btn-outline btn-remove" onclick="showRemoveUserModal('${org.org_id}','${u.user_id}','${esc(u.name||u.email)}',${u.account_count||0})" title="Revoke access, keep their history">Remove</button>`}
-          </div>`).join(''):'<div class="empty">No users yet. Add reps to get started, or upload a list from Bulk setup.</div>'}
+          ${(function(){
+            const act = users.filter(u => u.is_active !== false);
+            const arch = users.filter(u => u.is_active === false);
+            const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : null;
+            const row = (u) => `<div class="user-row${u.is_active===false?' is-removed':''}">
+              <div class="user-avatar">${esc((u.name||u.email||'?').slice(0,2).toUpperCase())}</div>
+              <div class="user-info">
+                <div class="user-name">${esc(u.name||u.email)}</div>
+                <div class="user-email">${esc(u.email)} · ${u.account_count||0} accounts${u.is_active===false
+                  ? (u.deactivated_at ? ' · archived ' + esc(fmt(u.deactivated_at)) : '')
+                  : ((u.active_since||u.created_at) ? ' · active since ' + esc(fmt(u.active_since||u.created_at)) : '')}</div>
+              </div>
+              <span class="user-role">${esc(u.role||'member')}</span>
+              ${u.is_active===false
+                ? `<button class="btn btn-sm btn-outline" onclick="reactivateUser('${org.org_id}','${u.user_id}','${esc(u.name||u.email)}')">Restore</button>`
+                : `<button class="btn btn-sm btn-outline" onclick="showAssignAccountsModal('${org.org_id}','${u.user_id}','${esc(u.name||u.email)}')">Assign accounts</button>
+                   <button class="btn btn-sm btn-outline btn-remove" onclick="showRemoveUserModal('${org.org_id}','${u.user_id}','${esc(u.name||u.email)}',${u.account_count||0})" title="Archive: revoke access, keep their history">Remove</button>`}
+            </div>`;
+            if (!users.length) return '<div class="empty">No users yet. Add people to get started, or upload a list from Bulk setup.</div>';
+            return (act.length ? act.map(row).join('') : '<div class="empty">No active people. Restore someone below, or add people.</div>') +
+              (arch.length ? `<details class="archived-wrap"><summary>Archived (${arch.length}): removed people, kept for history</summary>${arch.map(row).join('')}</details>` : '');
+          })()}
         </div>
       </div>
       <div class="card">
@@ -1325,6 +1348,85 @@ function showAddUserModal(orgId){
   </div></div>`;
 }
 function generatePass(){return 'Sam'+Math.random().toString(36).slice(2,8)+'!'}
+
+// ── Add people: one or many, with a welcome email from Sam ────────────────
+// One per line: email, name, role. Name and role are optional; the default
+// role applies when a line has none. Temporary passwords are generated on the
+// server, emailed with the login link, and must be changed on first sign-in.
+function showAddPeopleModal(orgId){
+  $('modal-root').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide">
+    <h3>Add people</h3>
+    <div class="card-sub">One person per line: <b>email, name, role</b>. Name and role are optional. Roles: sdr, ae, manager, director, executive, admin.</div>
+    <div class="f"><textarea id="ap-lines" rows="8" placeholder="priya@company.com, Priya Sharma, sdr&#10;rahul@company.com, Rahul Mehta, ae&#10;neha@company.com" style="font-size:13px;line-height:1.6;font-family:Menlo,Consolas,monospace"></textarea></div>
+    <div class="grid2">
+      <div class="f"><label>Default role</label><select id="ap-role" class="sel" style="width:100%"><option value="sdr">SDR (Tier 1)</option><option value="ae">AE (Tier 1)</option><option value="manager">Manager (Tier 2)</option><option value="director">Director (Tier 3)</option><option value="executive">CXO (Tier 4)</option><option value="admin">Company Admin (Tier 5)</option></select></div>
+      <div class="f" style="display:flex;flex-direction:column;gap:6px;justify-content:flex-end;font-size:12px">
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ap-welcome" checked> Send each person a welcome email from Sam</label>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ap-restore" checked> Restore anyone archived instead of creating a duplicate</label>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn" id="ap-go" onclick="addPeople('${orgId}')">Add people</button><button class="btn btn-outline" onclick="closeModal()">Cancel</button></div>
+    <div class="msg" id="ap-msg"></div>
+    <div id="ap-results"></div>
+  </div></div>`;
+}
+function _parsePeopleLines(text, defRole){
+  const roles=['sdr','ae','member','manager','director','executive','admin'];
+  return String(text||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map(l=>{
+    const parts=l.split(/[,\t;]/).map(x=>x.trim()).filter(x=>x!=='');
+    const email=(parts.find(p=>/@/.test(p))||'').toLowerCase();
+    const role=(parts.find(p=>roles.includes(p.toLowerCase()))||defRole).toLowerCase();
+    const name=parts.filter(p=>p.toLowerCase()!==email && !roles.includes(p.toLowerCase())).join(' ')||null;
+    return { email, name, role, raw:l };
+  });
+}
+async function addPeople(orgId){
+  const people=_parsePeopleLines($('ap-lines').value, $('ap-role').value);
+  const bad=people.filter(p=>!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.email));
+  if(!people.length){$('ap-msg').textContent='Add at least one line.';$('ap-msg').className='msg';return}
+  if(bad.length){$('ap-msg').textContent='No valid email on: '+bad.map(b=>b.raw).join(' | ');$('ap-msg').className='msg';return}
+  if(people.length>100){$('ap-msg').textContent='At most 100 people per go.';$('ap-msg').className='msg';return}
+  $('ap-go').disabled=true;$('ap-msg').textContent='Creating '+people.length+(people.length===1?' person':' people')+'…';$('ap-msg').className='msg ok';
+  let d; try{ d=await edgeCall('admin_create_users',{org_id:orgId,users:people.map(p=>({email:p.email,name:p.name,role:p.role})),send_welcome:$('ap-welcome').checked,restore_if_archived:$('ap-restore').checked,default_role:$('ap-role').value}); }
+  catch(e){ d={ok:false,error:e.message}; }
+  $('ap-go').disabled=false;
+  if(!d||!d.ok){$('ap-msg').textContent='Error: '+((d&&d.error)||'admin_create_users is not deployed yet');$('ap-msg').className='msg';return}
+  const s2=d.summary||{};
+  $('ap-msg').textContent=(s2.created||0)+' created, '+(s2.restored||0)+' restored, '+(s2.exists||0)+' already there, '+(s2.failed||0)+' failed. '+(s2.emails_sent||0)+' welcome emails sent.';
+  $('ap-msg').className='msg ok';
+  window._apLast=d.results||[];
+  const label={created:'<span class="ap-ok">Created</span>',restored:'<span class="ap-ok">Restored</span>',exists:'<span class="ap-warn">Already there</span>',failed:'<span class="ap-err">Failed</span>',skipped:'<span class="ap-warn">Skipped</span>'};
+  $('ap-results').innerHTML='<table class="ap-table"><tr><th>Email</th><th>Result</th><th>Welcome email</th><th>Temporary password</th></tr>'+
+    (d.results||[]).map(r=>'<tr><td>'+esc(r.email)+'</td><td>'+(label[r.status]||esc(r.status))+(r.error?'<div style="color:var(--text3);font-size:11px">'+esc(r.error)+'</div>':'')+'</td>'+
+      '<td>'+(r.status==='created'||r.status==='restored'?(r.email_sent?'<span class="ap-ok">Sent</span>':'<span class="ap-err">Not sent</span>'+(r.email_error?'<div style="color:var(--text3);font-size:11px">'+esc(r.email_error)+'</div>':'')):'')+'</td>'+
+      '<td>'+(r.temp_password?'<span class="ap-pass">'+esc(r.temp_password)+'</span>':'')+'</td></tr>').join('')+'</table>'+
+    '<div style="font-size:11px;color:var(--text3);margin-top:8px">Passwords are shown once. If a welcome email was not sent, share that password with the person directly; they must change it on first sign-in.</div>'+
+    '<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-sm btn-outline" onclick="copyAddPeopleResults()">Copy results</button><button class="btn btn-sm" onclick="closeModal();selectOrg(\''+orgId+'\')">Done</button></div>';
+}
+function copyAddPeopleResults(){
+  const t=(window._apLast||[]).map(r=>[r.email,r.status,r.email_sent?'email sent':'email NOT sent',r.temp_password||''].join('\t')).join('\n');
+  navigator.clipboard.writeText(t).then(()=>{$('ap-msg').textContent='Copied.';},()=>{});
+}
+
+// ── Access requests (from "Request access" on the sign-in page) ───────────
+async function showAccessRequests(){
+  $('modal-root').innerHTML='<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide"><h3>Access requests</h3><div id="ar-body" class="card-sub">Loading…</div></div></div>';
+  const d=await edgeCall('admin_list_access_requests',{});
+  const rows=(d&&d.requests)||[];
+  if(!d||!d.ok){$('ar-body').textContent='Error: '+((d&&d.error)||'admin_list_access_requests is not deployed yet');return}
+  if(!rows.length){$('ar-body').textContent=d.note||'No requests yet. They arrive from "Request access" on the sign-in page, and each one is also emailed to you.';return}
+  const st=['new','contacted','converted','declined'];
+  $('ar-body').innerHTML='<table class="ap-table"><tr><th>When</th><th>Who</th><th>Company</th><th>Details</th><th>Status</th></tr>'+rows.map(r=>
+    '<tr><td>'+esc(new Date(r.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short'}))+'</td>'+
+    '<td>'+esc(r.name||'')+'<div style="color:var(--text3)">'+esc(r.email)+(r.phone?' · '+esc(r.phone):'')+'</div></td>'+
+    '<td>'+esc(r.company||'')+(r.team_size?'<div style="color:var(--text3)">'+esc(r.team_size)+'</div>':'')+'</td>'+
+    '<td style="max-width:220px">'+esc(r.message||'')+'</td>'+
+    '<td><select class="sel" onchange="setAccessRequestStatus(\''+r.id+'\',this.value)">'+st.map(x=>'<option'+(x===r.status?' selected':'')+'>'+x+'</option>').join('')+'</select></td></tr>').join('')+'</table>';
+}
+async function setAccessRequestStatus(id,status){
+  const d=await edgeCall('admin_set_access_request_status',{id,status});
+  if(!d||!d.ok) alert('Could not save: '+((d&&d.error)||'unknown'));
+}
 async function createUser(orgId){
   const email=$('mu-email')?.value?.trim(),pass=$('mu-pass')?.value,name=$('mu-name')?.value?.trim(),role=$('mu-role')?.value;
   if(!email||!pass){$('mu-msg').textContent='Email and password required';return}
