@@ -121,6 +121,15 @@ input,select,button,textarea{font-family:var(--font)}
 .archived-wrap summary:before{content:'\25B8  '}
 .archived-wrap[open] summary:before{content:'\25BE  '}
 .ap-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}
+.us-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}
+.us-tile{border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;background:var(--bg3)}
+.us-tile .k{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)}
+.us-tile .v{font-size:20px;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}
+.us-tile .d{font-size:11px;color:var(--text3);margin-top:2px}
+.us-wrap{overflow-x:auto}
+.ap-table td.n,.ap-table th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.us-bar{display:inline-block;width:60px;height:6px;background:var(--border);border-radius:3px;vertical-align:middle;margin-left:6px;overflow:hidden}
+.us-bar i{display:block;height:100%;background:var(--gold2)}
 .ap-table th{text-align:left;color:var(--text3);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--border)}
 .ap-table td{padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top}
 .ap-ok{color:var(--green)}.ap-warn{color:var(--amber,#d4a017)}.ap-err{color:var(--coral)}
@@ -265,7 +274,8 @@ const ADMIN_SECTIONS = [
   { key:'scoring',      label:'Scoring' },
   { key:'alerts',       label:'Alerts' },
   { key:'integrations', label:'Integrations' },
-  { key:'bulk',         label:'Bulk setup' }
+  { key:'bulk',         label:'Bulk setup' },
+  { key:'usage',        label:'Usage' }
 ];
 let _activeSection = 'people';
 
@@ -624,14 +634,80 @@ function renderOrgPage(org, users, products=[], kv={}){
         ${FEATURE_FLAGS.map(f=>`<div class="row"><div class="row-label">${FEATURE_LABELS[f]||f}</div><button class="toggle ${features[f]!==false?'on':'off'}" id="flag-${f}" onclick="this.classList.toggle('on');this.classList.toggle('off');markDirty()"><div class="toggle-dot"></div></button></div>`).join('')}
       </div>
       ${saveBar('feature flags', "saveConfig('"+org.org_id+"')", 'save-status-flags')}
+    </div>
+
+    <!-- ══ USAGE ══ -->
+    <div class="section" id="sec-usage">
+      <div class="card">
+        <div class="card-title">Usage
+          <span style="display:flex;gap:8px">
+            <select id="us-month" class="btn-sm" style="background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:var(--r-sm)" onchange="loadUsage('${org.org_id}')">${usageMonthOptions()}</select>
+            <button class="btn btn-sm btn-outline" onclick="usageCsv()">CSV</button>
+          </span></div>
+        <div class="card-sub"><b>Seat days</b> are what this client is billed on: every day a person's access was on, from the day it was switched on through the day it was switched off. <b>Used days</b> are days the person actually opened SamoraOS or used the LinkedIn panel. They measure adoption and are never billed.</div>
+        <div id="us-body"><div class="empty">Loading usage</div></div>
+      </div>
     </div>`;
 
   restoreSection();
+  loadUsage(org.org_id);
   loadCompetitors(org.org_id);
   _renderGoalTemplates(kv);
   loadCaseStudies(org.org_id);
 }
 
+
+// ── Usage: seat days (billing basis) and used days (adoption) ──────────────
+function usageMonthOptions(){
+  const out = [], d = new Date();
+  for (let k = 0; k < 13; k++){
+    const x = new Date(d.getFullYear(), d.getMonth() - k, 1);
+    const v = x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0');
+    out.push('<option value="' + v + '">' + x.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }) + (k === 0 ? ' (so far)' : '') + '</option>');
+  }
+  return out.join('');
+}
+let _usage = null;
+async function loadUsage(orgId){
+  const body = $('us-body'); if (!body) return;
+  const month = ($('us-month') || {}).value;
+  body.innerHTML = '<div class="empty">Loading usage</div>';
+  let d;
+  try { d = await edgeCall('admin_usage', { org_id: orgId, month: month }); }
+  catch (e) { body.innerHTML = '<div class="msg">' + esc(e.message || String(e)) + '</div>'; return; }
+  if (!d || !d.ok){ body.innerHTML = '<div class="msg">' + esc((d && d.error) || 'Could not load usage. Is the usage_metering SQL run and the edge function deployed?') + '</div>'; return; }
+  _usage = d.usage; _usage._org = (orgs.find(o => o.org_id === orgId) || {}).display_name || orgId;
+  const u = d.usage, dim = u.days_in_month, rows = u.users || [];
+  const seatDays = rows.reduce((a, r) => a + r.seat_days, 0), usedDays = rows.reduce((a, r) => a + Math.min(r.used_days, r.seat_days || r.used_days), 0);
+  const seatMonths = seatDays / dim;
+  const through = new Date(u.counted_through + 'T00:00:00').getDate();
+  const fmtD = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'now';
+  const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+  body.innerHTML =
+    '<div class="us-tiles">' +
+      '<div class="us-tile"><div class="k">Seats, in user months</div><div class="v">' + seatMonths.toFixed(2) + '</div><div class="d">' + seatDays + ' seat days of ' + dim + ' day month</div></div>' +
+      '<div class="us-tile"><div class="k">People with a seat</div><div class="v">' + rows.filter(r => r.seat_days > 0).length + '</div><div class="d">at any point in the month</div></div>' +
+      '<div class="us-tile"><div class="k">Adoption</div><div class="v">' + pct(usedDays, seatDays) + '%</div><div class="d">used days over seat days' + (through < dim ? ', to day ' + through : '') + '</div></div>' +
+      '<div class="us-tile"><div class="k">Sharing with billing</div><div class="v" style="font-size:14px">' + (d.sharing_on ? 'On' : 'Off') + '</div><div class="d">' + (d.sharing_on ? 'The billing app can pull this' : 'Set BILLING_USAGE_KEY to turn it on') + '</div></div>' +
+    '</div>' +
+    (rows.length ? '<div class="us-wrap"><table class="ap-table"><tr><th>Person</th><th>Role</th><th>Access</th><th class="n">Seat days</th><th class="n">Used days</th><th class="n">Adoption</th></tr>' +
+      rows.map(r => '<tr><td>' + esc(r.email || r.user_id) + (r.is_active ? '' : ' <span style="color:var(--text3)">(removed)</span>') + '</td><td>' + esc(r.role || '') + '</td><td>' +
+        (r.periods || []).map(p => fmtD(p.from) + ' to ' + fmtD(p.to)).join(', ') + '</td><td class="n">' + r.seat_days + '</td><td class="n">' + r.used_days +
+        '</td><td class="n">' + (r.seat_days ? pct(Math.min(r.used_days, r.seat_days), r.seat_days) + '%<span class="us-bar"><i style="width:' + pct(Math.min(r.used_days, r.seat_days), r.seat_days) + '%"></i></span>' : '') + '</td></tr>').join('') +
+      '</table></div>' : '<div class="empty">Nobody had access in this month.</div>') +
+    '<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5">Days are India time. A person removed and restored has two periods, and the gap is not counted. Used days are recorded from 1 October 2026, when tracking began.</div>';
+}
+function usageCsv(){
+  if (!_usage) return;
+  const rows = [['Organisation', 'Month', 'Person', 'Role', 'Access now', 'Periods', 'Seat days', 'Days in month', 'Seat share', 'Used days']];
+  (_usage.users || []).forEach(r => rows.push([_usage._org, _usage.month, r.email || r.user_id, r.role || '', r.is_active ? 'Active' : 'Removed',
+    (r.periods || []).map(p => p.from + ' to ' + (p.to || 'now')).join('; '), r.seat_days, _usage.days_in_month,
+    (r.seat_days / _usage.days_in_month).toFixed(4), r.used_days]));
+  const csv = rows.map(r => r.map(v => { const t = String(v == null ? '' : v); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; }).join(',')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'SamoraOS-usage-' + String(_usage._org).replace(/[^A-Za-z0-9]+/g, '-') + '-' + _usage.month + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
 
 // ── Enrichment keys ────────────────────────────────────────────────────────
 async function clearEnrichmentKey(provider, orgId){
