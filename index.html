@@ -2099,6 +2099,8 @@ async function saveSeatLimit(orgId){
       if (e.action === 'product_removed') return 'removed the product ' + h(x.product || '');
       if (e.action === 'icp_updated') return 'updated the ideal customer profile' + (x.fields && x.fields.indexOf('target_stakeholders') !== -1 ? ', including target designations' : '');
       if (e.action === 'test_data_removed') return 'removed test data for ' + t + (x.summary ? ': ' + h(x.summary) : '');
+      if (e.action === 'accounts_exported') return 'downloaded the account list (' + (x.count || 0) + ' accounts)';
+      if (e.action === 'accounts_imported') return 'uploaded accounts: ' + (x.added || 0) + ' added, ' + (x.updated || 0) + ' updated' + (x.failed ? ', ' + x.failed + ' could not be saved' : '');
       if (x.role) parts.push('role ' + h(ROLE_LABEL[x.role.from] || x.role.from || 'none') + ' to ' + h(ROLE_LABEL[x.role.to] || x.role.to));
       if (x.admin) parts.push(x.admin.to ? 'turned admin on' : 'turned admin off');
       if (x.manager) parts.push('manager ' + h(x.manager.from || 'none') + ' to ' + h(x.manager.to || 'none'));
