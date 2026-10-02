@@ -1768,6 +1768,19 @@ async function saveSeatLimit(orgId){
 (function () {
   'use strict';
 
+  // The org's own names for roles (org_settings.role_labels, edited in Samora
+  // admin) replace these defaults wherever a role is shown or picked.
+  var ROLE_DEFAULT = { sdr: 'SDR', ae: 'AE', manager: 'Manager', director: 'Director', executive: 'Executive',
+                     member: 'Member (old role)', admin: 'Admin (old role)', super_admin: 'Account owner' };
+  function applyRoleLabels(map) {
+    Object.keys(ROLE_LABEL).forEach(function (k) { delete ROLE_LABEL[k]; });
+    Object.keys(ROLE_DEFAULT).forEach(function (k) { ROLE_LABEL[k] = ROLE_DEFAULT[k]; });
+    if (!map || typeof map !== 'object') return;
+    ['sdr', 'ae', 'manager', 'director', 'executive'].forEach(function (k) {
+      var v = map[k]; if (typeof v === 'string' && v.trim()) ROLE_LABEL[k] = v.trim().slice(0, 40);
+    });
+    if (typeof map.member === 'string' && map.member.trim()) ROLE_LABEL.member = map.member.trim().slice(0, 40) + ' (old role)';
+  }
   var ROLE_LABEL = { sdr: 'SDR', ae: 'AE', manager: 'Manager', director: 'Director', executive: 'Executive',
                      member: 'Member (old role)', admin: 'Admin (old role)', super_admin: 'Account owner' };
   var WHY_LABEL = { self: 'Themselves', org: 'Whole organisation', team: 'In their team', shared: 'Shared', shared_team: 'Shared, with team' };
@@ -1823,6 +1836,7 @@ async function saveSeatLimit(orgId){
       return;
     }
     this.data = d;
+    applyRoleLabels(d.role_labels || (this.orgId ? null : (window._orgConfig && window._orgConfig.roleLabels)));
     if (!this.pfDirty) this.profile = null;
     this.byId = {};
     var self = this;
