@@ -336,7 +336,11 @@ input,select,button,textarea{font-family:var(--font)}
 // platform admin turning discovery_mode on in SQL would have lost it the first
 // time someone edited an unrelated setting.
 const FEATURE_FLAGS = ['sam_intelligence','account_coverage','intent_vs_reality',
-                       'account_intel_ai','digest_reports','deal_signals','discovery_mode'];
+                       'account_intel_ai','digest_reports','deal_signals','discovery_mode','linkedin_automation'];
+// Add-ons are OFF unless switched on. Every other flag above is on unless
+// switched off. linkedin_automation is set for every existing org by
+// linkedin_plans_scorecard_2026-10-03.sql (on where LinkedIn was in use).
+const ADDON_FLAGS = new Set(['linkedin_automation']);
 const FEATURE_LABELS = {
   sam_intelligence:  'SAM Intelligence',
   account_coverage:  'Coverage tracking',
@@ -344,7 +348,8 @@ const FEATURE_LABELS = {
   account_intel_ai:  'AI Intel (Gemini)',
   digest_reports:    'Digest reports',
   deal_signals:      'Deal signals',
-  discovery_mode:    'Discovery Mode (AI company finder)'
+  discovery_mode:    'Discovery Mode (AI company finder)',
+  linkedin_automation: 'LinkedIn Automation (add-on)'
 };
 </script>
 <script>
@@ -449,7 +454,7 @@ async function selectOrg(orgId){
   const [users, productsData, kvData] = await Promise.all([
     edgeCall('admin_list_users',{org_id:orgId}),
     edgeCall('get_products',{org_id:orgId}),
-    edgeCall('admin_get_org_settings',{org_id:orgId, keys:['health_score_weights','notification_rules','enrichment_apollo_key','enrichment_lusha_key','enrichment_hunter_key','stakeholder_scout_profile','scout_batch_size','campaign_goal_templates','seat_limit']})
+    edgeCall('admin_get_org_settings',{org_id:orgId, keys:['health_score_weights','notification_rules','enrichment_apollo_key','enrichment_lusha_key','enrichment_hunter_key','stakeholder_scout_profile','scout_batch_size','campaign_goal_templates','seat_limit','addon_request_linkedin','weekly_targets']})
   ]);
   renderOrgPage(org, users.users||[], productsData.products||[], (kvData&&kvData.settings)||{});
 }
@@ -772,8 +777,8 @@ function renderOrgPage(org, users, products=[], kv={}){
       <div class="card">
         <div class="card-title">Feature flags</div>
         <div class="card-sub">Turn whole capabilities on or off for this organisation.</div>
-        ${FEATURE_FLAGS.map(f=>`<div class="row"><div class="row-label">${FEATURE_LABELS[f]||f}</div><button class="toggle ${features[f]!==false?'on':'off'}" id="flag-${f}" onclick="this.classList.toggle('on');this.classList.toggle('off');markDirty()"><div class="toggle-dot"></div></button></div>`).join('')}
-      </div>
+        ${FEATURE_FLAGS.map(f=>`<div class="row"><div class="row-label">${FEATURE_LABELS[f]||f}</div><button class="toggle ${(ADDON_FLAGS.has(f)?features[f]===true:features[f]!==false)?'on':'off'}" id="flag-${f}" onclick="this.classList.toggle('on');this.classList.toggle('off');markDirty()"><div class="toggle-dot"></div></button></div>`).join('')}
+      ${(function(){try{var r=JSON.parse(_kvCache.addon_request_linkedin||kv.addon_request_linkedin||'null');if(!r||!r.people||!r.people.length)return '';return '<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(212,175,55,.10);border:1px solid rgba(212,175,55,.35);font-size:11px;line-height:1.5"><b>LinkedIn Automation requested</b> by '+r.people.slice(0,5).map(function(p){return esc(p.email||'someone')+' ('+new Date(p.at).toLocaleDateString()+')';}).join(', ')+(features.linkedin_automation===true?'. Already on.':'. Switch it on above to unlock it.')+'</div>';}catch(e){return '';}})()}</div>
       ${saveBar('feature flags', "saveConfig('"+org.org_id+"')", 'save-status-flags')}
     </div>
 
