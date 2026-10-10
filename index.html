@@ -301,6 +301,36 @@ input,select,button,textarea{font-family:var(--font)}
 .sxa-mb-st.off{color:var(--text2,#5f5e5a)}
 .sxa-mb-why{grid-column:1/-1;font-size:12.5px;color:#b3261e;padding-left:44px}
 @media (max-width:640px){.sxa-mb-blank{display:none}.sxa-mb-row{grid-template-columns:1fr 1fr}.sxa-mb-why{padding-left:0}.sxa-mb-sum .sxa-btn{margin-left:0}}
+
+/* Drop H (2026-10-10): usage limits and the console's Usage tab */
+:root{--c-accent-rgb:196,154,42;--c-accent-text:#D9B44A;--c-focus:#C49A2A;--c-risk:#E07A66;--c-risk-wash:rgba(192,82,63,.14);--c-partial:#D08A30;--dur-fast:.15s}
+.ucap{border-collapse:collapse;font-size:12px;margin-top:8px}
+.ucap th{font-weight:600;color:var(--text3);text-align:left;padding:4px 10px 6px 0}
+.ucap td{padding:4px 10px 4px 0;color:var(--text2)}
+.ucap input{width:96px;padding:5px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:2px;color:var(--text);font-family:var(--font)}
+.toggle-pill{all:unset;box-sizing:border-box;position:relative;display:inline-block;width:40px;height:24px;border-radius:999px;background:rgba(127,127,127,.32);cursor:pointer;flex:none;transition:background .15s}
+.toggle-pill i{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .15s}
+.toggle-pill.on{background:var(--c-accent)}
+.toggle-pill.on i{transform:translateX(16px)}
+.toggle-pill:focus-visible{outline:2px solid var(--c-focus);outline-offset:2px}
+.g19-tl{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px 14px;margin:10px 0}
+.g19-tf{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:var(--text)}
+.g19-tf small{display:block;font-weight:400;font-size:11px;color:var(--text3);margin-top:1px}
+.g19-tf .sxa-in{max-width:140px}
+.g19-ptbl td{vertical-align:top}
+.sxa-pf .sxa-tbl{border-collapse:collapse}
+.sxa-pf .sxa-tbl th{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);padding:8px 10px 8px 0}
+.sxa-pf .sxa-tbl td{padding:10px 10px 10px 0;border-top:1px solid var(--border);font-size:13px}
+.g19-ucs{display:flex;flex-wrap:wrap;gap:5px}
+.g19-uc{font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(127,127,127,.14);color:var(--text2);white-space:nowrap}
+.g19-uc b{color:var(--text)}
+.g19-uc.full{background:var(--c-risk-wash);color:var(--c-risk)}
+.g19-lnk{all:unset;cursor:pointer;margin-top:6px;display:inline-block;font-size:12px;font-weight:600;color:var(--c-accent-text)}
+.g19-lnk:hover{text-decoration:underline}
+.g19-edit td{background:var(--bg3)}
+.g19-sw{display:flex;gap:12px;align-items:flex-start;max-width:640px;margin-top:6px}
+.g19-sw span{display:flex;flex-direction:column;gap:3px;font-size:13px}
+.g19-sw small{font-size:12px;color:var(--text3);line-height:1.45}
 </style>
 </head>
 <body>
@@ -363,7 +393,9 @@ const FEATURE_FLAGS = ['sam_intelligence','account_coverage','intent_vs_reality'
 // Add-ons are OFF unless switched on. Every other flag above is on unless
 // switched off. linkedin_automation is set for every existing org by
 // linkedin_plans_scorecard_2026-10-03.sql (on where LinkedIn was in use).
-const ADDON_FLAGS = new Set(['linkedin_automation']);
+// discovery_mode is SAM-TAM Discovery, premium from 2026-10-10: off unless
+// switched on, the same as the edge function reads it.
+const ADDON_FLAGS = new Set(['linkedin_automation', 'discovery_mode']);
 const FEATURE_LABELS = {
   sam_intelligence:  'SAM Intelligence',
   account_coverage:  'Coverage tracking',
@@ -371,7 +403,7 @@ const FEATURE_LABELS = {
   account_intel_ai:  'AI Intel (Gemini)',
   digest_reports:    'Digest reports',
   deal_signals:      'Deal signals',
-  discovery_mode:    'Discovery Mode (AI company finder)',
+  discovery_mode:    'SAM-TAM Discovery (premium add-on)',
   linkedin_automation: 'LinkedIn Automation (add-on)'
 };
 </script>
@@ -477,7 +509,7 @@ async function selectOrg(orgId){
   const [users, productsData, kvData] = await Promise.all([
     edgeCall('admin_list_users',{org_id:orgId}),
     edgeCall('get_products',{org_id:orgId}),
-    edgeCall('admin_get_org_settings',{org_id:orgId, keys:['health_score_weights','notification_rules','enrichment_apollo_key','enrichment_lusha_key','enrichment_hunter_key','stakeholder_scout_profile','scout_batch_size','campaign_goal_templates','seat_limit','addon_request_linkedin','weekly_targets']})
+    edgeCall('admin_get_org_settings',{org_id:orgId, keys:['health_score_weights','notification_rules','enrichment_apollo_key','enrichment_lusha_key','enrichment_hunter_key','stakeholder_scout_profile','scout_batch_size','campaign_goal_templates','seat_limit','addon_request_linkedin','addon_request_sam_tam','weekly_targets']})
   ]);
   renderOrgPage(org, users.users||[], productsData.products||[], (kvData&&kvData.settings)||{});
 }
@@ -544,6 +576,11 @@ function renderOrgPage(org, users, products=[], kv={}){
           <button class="btn btn-sm btn-outline" onclick="saveSeatLimit('${org.org_id}')">Save</button>
           <span id="seat-limit-msg" style="font-size:12px;color:var(--text3)"></span>
         </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Usage limits</div>
+        <div class="card-sub">The most each person in this organisation can do in a day, and optionally the whole organisation in a month. Their admin can set lower limits in Team &amp; access, Usage, never higher. Empty uses Samora's default.</div>
+        <div id="usage-caps-${org.org_id}" class="ucap-wrap"><div class="empty">Loading</div></div>
       </div>
       <div class="card">
         <div class="card-sub" style="margin-bottom:12px">Exactly what this client's admin sees under Admin in SamoraOS, with your Samora rights on top: you can act on any org, go past the seat cap, and change an account owner. Every change here is logged against Samora.</div>
@@ -802,7 +839,8 @@ function renderOrgPage(org, users, products=[], kv={}){
         <div class="card-title">Feature flags</div>
         <div class="card-sub">Turn whole capabilities on or off for this organisation.</div>
         ${FEATURE_FLAGS.map(f=>`<div class="row"><div class="row-label">${FEATURE_LABELS[f]||f}</div><button class="toggle ${(ADDON_FLAGS.has(f)?features[f]===true:features[f]!==false)?'on':'off'}" id="flag-${f}" onclick="this.classList.toggle('on');this.classList.toggle('off');markDirty()"><div class="toggle-dot"></div></button></div>`).join('')}
-      ${(function(){try{var r=JSON.parse(_kvCache.addon_request_linkedin||kv.addon_request_linkedin||'null');if(!r||!r.people||!r.people.length)return '';return '<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(212,175,55,.10);border:1px solid rgba(212,175,55,.35);font-size:11px;line-height:1.5"><b>LinkedIn Automation requested</b> by '+r.people.slice(0,5).map(function(p){return esc(p.email||'someone')+' ('+new Date(p.at).toLocaleDateString()+')';}).join(', ')+(features.linkedin_automation===true?'. Already on.':'. Switch it on above to unlock it.')+'</div>';}catch(e){return '';}})()}</div>
+      ${(function(){try{var r=JSON.parse(_kvCache.addon_request_linkedin||kv.addon_request_linkedin||'null');if(!r||!r.people||!r.people.length)return '';return '<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(212,175,55,.10);border:1px solid rgba(212,175,55,.35);font-size:11px;line-height:1.5"><b>LinkedIn Automation requested</b> by '+r.people.slice(0,5).map(function(p){return esc(p.email||'someone')+' ('+new Date(p.at).toLocaleDateString()+')';}).join(', ')+(features.linkedin_automation===true?'. Already on.':'. Switch it on above to unlock it.')+'</div>';}catch(e){return '';}})()}
+      ${(function(){try{var r=JSON.parse(_kvCache.addon_request_sam_tam||kv.addon_request_sam_tam||'null');if(!r||!r.people||!r.people.length)return '';return '<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(212,175,55,.10);border:1px solid rgba(212,175,55,.35);font-size:11px;line-height:1.5"><b>SAM-TAM Discovery requested</b> by '+r.people.slice(0,5).map(function(p){return esc(p.email||'someone')+' ('+new Date(p.at).toLocaleDateString()+')';}).join(', ')+(features.discovery_mode===true?'. Already on.':'. Switch it on above to unlock it.')+'</div>';}catch(e){return '';}})()}</div>
       ${saveBar('feature flags', "saveConfig('"+org.org_id+"')", 'save-status-flags')}
     </div>
 
@@ -1769,6 +1807,39 @@ function _mountAccessConsole(orgId){
   const el = $('sxa-admin-mount'); if (!el || !window.SamoraAccessConsole) return;
   // showProfile off: the Company section below already edits the same ICP and products.
   window._sxaAdmin = window.SamoraAccessConsole.mount(el, { call: edgeCall, orgId: orgId, showProfile: false });
+  try { loadUsageCaps(orgId); } catch (e) {}
+}
+
+// ── Usage limits (2026-10-10, Drop H) ─────────────────────────────────────
+async function loadUsageCaps(orgId){
+  const box = document.getElementById('usage-caps-' + orgId); if (!box) return;
+  const d = await edgeCall('admin_usage_caps_get', { org_id: orgId });
+  if (!d || !d.ok) { box.innerHTML = '<div class="empty">' + esc((d && d.error) || 'Usage limits need the Drop H edge function.') + '</div>'; return; }
+  renderUsageCaps(orgId, d);
+}
+function renderUsageCaps(orgId, d){
+  const box = document.getElementById('usage-caps-' + orgId); if (!box) return;
+  const kinds = Object.keys(d.defaults || {});
+  box.innerHTML = '<table class="ucap"><thead><tr><th></th><th>Per person a day</th><th>Whole org a month</th></tr></thead><tbody>' +
+    kinds.map(function(k){
+      const dv = d.daily[k] === d.defaults[k] ? '' : d.daily[k];
+      const mv = d.monthly[k] === null || d.monthly[k] === undefined ? '' : d.monthly[k];
+      return '<tr><td>' + esc(d.labels[k] || k) + '</td>' +
+        '<td><input type="number" min="0" data-ucap-d="' + k + '" value="' + esc(String(dv)) + '" placeholder="' + d.defaults[k] + '"></td>' +
+        '<td><input type="number" min="0" data-ucap-m="' + k + '" value="' + esc(String(mv)) + '" placeholder="No cap"></td></tr>';
+    }).join('') + '</tbody></table>' +
+    '<div style="display:flex;align-items:center;gap:10px;margin-top:10px"><button class="btn btn-sm btn-outline" onclick="saveUsageCaps(\'' + orgId + '\')">Save limits</button><span id="usage-caps-msg-' + orgId + '" style="font-size:12px;color:var(--text3)"></span></div>';
+}
+async function saveUsageCaps(orgId){
+  const box = document.getElementById('usage-caps-' + orgId); if (!box) return;
+  const msg = document.getElementById('usage-caps-msg-' + orgId);
+  const daily = {}, monthly = {};
+  box.querySelectorAll('[data-ucap-d]').forEach(function(i){ if (i.value !== '') daily[i.getAttribute('data-ucap-d')] = i.value; });
+  box.querySelectorAll('[data-ucap-m]').forEach(function(i){ if (i.value !== '') monthly[i.getAttribute('data-ucap-m')] = i.value; });
+  if (msg) { msg.textContent = 'Saving…'; msg.style.color = 'var(--text3)'; }
+  const d = await edgeCall('admin_usage_caps_save', { org_id: orgId, daily: daily, monthly: monthly });
+  if (d && d.ok) { renderUsageCaps(orgId, d); const m2 = document.getElementById('usage-caps-msg-' + orgId); if (m2) { m2.textContent = 'Saved'; m2.style.color = 'var(--green, #4a7)'; } if (window._sxaAdmin) { window._sxaAdmin.use = null; } }
+  else if (msg) { msg.textContent = 'Error: ' + ((d && d.error) || 'unknown'); msg.style.color = 'var(--coral)'; }
 }
 async function saveSeatLimit(orgId){
   const el = $('seat-limit'); const msg = $('seat-limit-msg');
@@ -1887,6 +1958,8 @@ async function saveSeatLimit(orgId){
     this.extraTabs.forEach(function (x) { tabs.push([x.key, x.label]); });
     if (this.showProfile) tabs.push(['profile', 'Company profile']);
     tabs.push(['calendar', 'Work calendar']);
+    tabs.push(['currency', 'Currency']);
+    tabs.push(['reveals', 'Usage']);
     tabs.push(['mailboxes', 'Mailboxes']);
     tabs.push(['log', 'Activity']);
     this._parkHosted();
@@ -1941,6 +2014,8 @@ async function saveSeatLimit(orgId){
     }
     if (this.tab === 'profile') { this._renderProfile(body); return; }
     if (this.tab === 'calendar') { this._renderCalendar(body); return; }
+    if (this.tab === 'currency') { this._renderCurrency(body); return; }
+    if (this.tab === 'reveals') { this._renderReveals(body); return; }
     if (this.tab === 'mailboxes') { this._renderMailboxes(body); return; }
     if (this.tab === 'people') body.innerHTML = this._people();
     else if (this.tab === 'tree') body.innerHTML = this._tree();
@@ -2165,6 +2240,9 @@ async function saveSeatLimit(orgId){
     else if (a.indexOf('cal-') === 0) this._calClick(a, t);
     else if (a === 'mb-refresh') this._renderMailboxes(this.el.querySelector('#sxa-body'), true);
     else if (a === 'mb-scan') this._mbScan(t);
+    else if (a === 'cur-save') this._saveCurrency(t);
+    else if (a === 'rev-save') this._saveReveals(t);
+    else if (a.indexOf('use-') === 0) this._g19Act(a, t);
   };
 
   Console.prototype._change = function (e) {
@@ -2436,6 +2514,86 @@ async function saveSeatLimit(orgId){
     }
   };
 
+  // ── Currency (2026-10-07) ──────────────────────────────────────────────
+  // The currency every amount in SamoraOS is shown in. Deals are stored in
+  // US dollars as well, so this changes how they read, never their value.
+  var CUR_NAMES = { INR: 'Indian rupee', USD: 'US dollar', EUR: 'Euro', GBP: 'British pound', AED: 'UAE dirham', SAR: 'Saudi riyal', QAR: 'Qatari riyal', KWD: 'Kuwaiti dinar', BHD: 'Bahraini dinar', OMR: 'Omani rial',
+    SGD: 'Singapore dollar', AUD: 'Australian dollar', NZD: 'New Zealand dollar', CAD: 'Canadian dollar', JPY: 'Japanese yen', CNY: 'Chinese yuan', HKD: 'Hong Kong dollar', IDR: 'Indonesian rupiah', MYR: 'Malaysian ringgit',
+    THB: 'Thai baht', PHP: 'Philippine peso', VND: 'Vietnamese dong', BDT: 'Bangladeshi taka', LKR: 'Sri Lankan rupee', NPR: 'Nepalese rupee', PKR: 'Pakistani rupee', ZAR: 'South African rand', KES: 'Kenyan shilling',
+    NGN: 'Nigerian naira', EGP: 'Egyptian pound', CHF: 'Swiss franc', SEK: 'Swedish krona', NOK: 'Norwegian krone', DKK: 'Danish krone', BRL: 'Brazilian real', MXN: 'Mexican peso' };
+  Console.prototype._renderCurrency = async function (body) {
+    var self = this;
+    if (!this.cur) {
+      body.innerHTML = '<div class="sxa-empty">Loading your currency…</div>';
+      var d;
+      try { d = await this.call('org_admin_currency_get', this._body()); } catch (e) { d = { ok: false, error: e.message }; }
+      if (this.tab !== 'currency') return;
+      if (!d || !d.ok) { body.innerHTML = '<div class="sxa-empty sxa-err">' + h((d && d.error) || 'Could not load the currency.') + '</div>'; return; }
+      this.cur = d;
+    }
+    var c = this.cur;
+    body.innerHTML =
+      '<div class="sxa-pf">' +
+        '<div class="sxa-sec" style="margin-top:4px">Currency</div>' +
+        '<div class="sxa-note">Every amount in SamoraOS is shown in this currency: deal values, pipeline, the morning digest and SAM. Deals keep their value; only how they read changes.</div>' +
+        '<label class="sxa-f" style="max-width:420px"><span class="sxa-lbl">Show amounts in</span><select class="sxa-in" data-sxa="cur-pick" id="sxaCurPick">' +
+          (c.currencies || []).map(function (k) { return '<option value="' + k + '"' + (k === c.currency ? ' selected' : '') + '>' + k + ' · ' + h(CUR_NAMES[k] || k) + '</option>'; }).join('') +
+        '</select></label>' +
+        '<div class="sxa-note">Now: <b>' + h(c.currency) + '</b>' + (c.currency !== 'USD' && c.usd_rate ? ', 1 US dollar = ' + h(String(Math.round(c.usd_rate * 100) / 100)) + ' ' + h(c.currency) + '. A deal of 100,000 US dollars reads ' + h(c.example || '') + '.' : '.') + ' Rates update daily.</div>' +
+        '<div class="sxa-actions" style="justify-content:flex-start"><button class="sxa-btn sxa-btn-gold" data-sxa="cur-save">Save currency</button></div>' +
+      '</div>';
+  };
+  Console.prototype._saveCurrency = async function (btn) {
+    var pick = this.el.querySelector('#sxaCurPick'); if (!pick) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    var d;
+    try { d = await this.call('org_admin_currency_save', this._body({ currency: pick.value })); } catch (e) { d = { ok: false, error: e.message }; }
+    if (!d || !d.ok) { this.toast((d && d.error) || 'Could not save.', true); if (btn) { btn.disabled = false; btn.textContent = 'Save currency'; } return; }
+    this.cur = Object.assign({}, this.cur, d);
+    // This org's own app re-reads money at once.
+    try { var mine = !this.orgId || (typeof profile !== 'undefined' && profile && String(profile.org_id) === String(this.orgId)); if (mine) { window._orgConfig = window._orgConfig || {}; window._orgConfig.defaultCurrency = d.currency; window._orgConfig.usdRate = d.usd_rate; } } catch (e) {}
+    try { if (typeof scInvalidate === 'function') scInvalidate(); } catch (e) {}
+    this.toast('Amounts now show in ' + d.currency);
+    this._renderCurrency(this.el.querySelector('#sxa-body'));
+  };
+
+  // ── Contact reveals (2026-10-08) ───────────────────────────────────────
+  // Each rep's daily limit for revealing a phone and email from the LinkedIn
+  // panel, and this month's reveals by person. A reveal is saved for the
+  // whole org, so the same person is never paid for twice.
+  Console.prototype._renderReveals = async function (body) {
+    if (!this.rev) {
+      body.innerHTML = '<div class="sxa-empty">Loading…</div>';
+      var d;
+      try { d = await this.call('org_admin_reveals_get', this._body()); } catch (e) { d = { ok: false, error: e.message }; }
+      if (this.tab !== 'reveals') return;
+      if (!d || !d.ok) { body.innerHTML = '<div class="sxa-empty sxa-err">' + h((d && d.error) || 'Could not load.') + '</div>'; return; }
+      this.rev = d;
+    }
+    var r = this.rev;
+    var rows = (r.month || []).map(function (m) { return '<tr><td>' + h(m.name) + '</td><td style="text-align:right">' + m.paid + '</td><td style="text-align:right">' + m.free + '</td><td style="text-align:right">' + m.found + '</td></tr>'; }).join('');
+    body.innerHTML =
+      '<div class="sxa-pf">' +
+        '<div class="sxa-sec" style="margin-top:4px">Contact reveals</div>' +
+        '<div class="sxa-note">Reps reveal a person’s phone and email with one click in Samora for LinkedIn. Samora checks its own records first, then Lusha and Apollo. A reveal is saved for the whole team, so nobody pays for the same person twice.</div>' +
+        '<label class="sxa-f" style="max-width:260px"><span class="sxa-lbl">Reveals per rep per day</span><input class="sxa-in" type="number" min="0" max="1000" id="sxaRevCap" value="' + h(String(r.cap)) + '"></label>' +
+        '<div class="sxa-note">0 switches reveals off. Each paid reveal usually uses one Lusha or Apollo credit.</div>' +
+        '<div class="sxa-actions" style="justify-content:flex-start"><button class="sxa-btn sxa-btn-gold" data-sxa="rev-save">Save limit</button></div>' +
+        '<div class="sxa-sec">This month</div>' +
+        (rows ? '<table class="sxa-tbl" style="width:100%;max-width:560px"><thead><tr><th style="text-align:left">Person</th><th style="text-align:right">Paid</th><th style="text-align:right">Free</th><th style="text-align:right">With a phone</th></tr></thead><tbody>' + rows + '</tbody></table><div class="sxa-note">' + r.total_paid + (r.total_paid === 1 ? ' paid reveal, ' : ' paid reveals, ') + r.total_found + ' with a phone number.</div>' : '<div class="sxa-note">No reveals yet this month.</div>') +
+      '</div>';
+  };
+  Console.prototype._saveReveals = async function (btn) {
+    var inp = this.el.querySelector('#sxaRevCap'); if (!inp) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    var d;
+    try { d = await this.call('org_admin_reveals_save', this._body({ cap: inp.value })); } catch (e) { d = { ok: false, error: e.message }; }
+    if (!d || !d.ok) { this.toast((d && d.error) || 'Could not save.', true); if (btn) { btn.disabled = false; btn.textContent = 'Save limit'; } return; }
+    this.rev = d;
+    this.toast(d.cap ? 'Each rep can reveal ' + d.cap + ' a day' : 'Reveals are off');
+    this._renderReveals(this.el.querySelector('#sxa-body'));
+  };
+
   Console.prototype._saveCalendar = async function (btn) {
     if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     var d;
@@ -2692,6 +2850,74 @@ async function saveSeatLimit(orgId){
       self.onChange();
     };
   };
+
+  // ── Usage: the admin's tab (Team & access) ──────────────────────────────────
+  Console.prototype._renderReveals = async function (body) {
+    if (!this.use) {
+      body.innerHTML = '<div class="sxa-empty">Loading…</div>';
+      var d, rv;
+      try { d = await this.call('org_admin_usage_get', this._body()); } catch (e) { d = { ok: false, error: e.message }; }
+      try { rv = await this.call('org_admin_reveals_get', this._body()); } catch (e) { rv = null; }
+      if (this.tab !== 'reveals') return;
+      if (!d || !d.ok) { body.innerHTML = '<div class="sxa-empty sxa-err">' + h((d && d.error) || 'Could not load.') + '</div>'; return; }
+      this.use = d; this.rev = rv && rv.ok ? rv : null;
+    }
+    var u = this.use, self = this;
+    var kinds = u.kinds || [];
+    var short = { ai_email: 'Emails', ai_note: 'LinkedIn notes', ai_read: 'Reads', reveal: 'Reveals', scout: 'People search', enrich: 'Look-ups', discovery: 'SAM-TAM', export: 'Exports' };
+    var team = '<div class="g19-tl">' + kinds.map(function (k) {
+      return '<label class="g19-tf"><span>' + h(k.label) + '<small>Samora limit ' + k.samora_cap + (k.month_cap !== null && k.month_cap !== undefined ? ' a day, ' + k.month_cap + ' a month for the team (' + k.month_used + ' used)' : ' a day') + '</small></span>' +
+        '<input class="sxa-in" type="number" min="0" max="' + k.samora_cap + '" data-g19-team="' + k.kind + '" value="' + (k.team_cap === null || k.team_cap === undefined ? '' : k.team_cap) + '" placeholder="' + k.samora_cap + '"></label>';
+    }).join('') + '</div>';
+    var rows = (u.people || []).map(function (p) {
+      var open = self.useOpen === p.user_id;
+      var chips = p.usage.filter(function (x) { return x.used > 0 || x.kind === 'ai_email'; }).map(function (x) {
+        var full = x.cap && x.used >= x.cap;
+        return '<span class="g19-uc' + (full ? ' full' : '') + '" title="' + h(short[x.kind] || x.kind) + '">' + h(short[x.kind] || x.kind) + ' <b>' + x.used + '</b>/' + x.cap + '</span>';
+      }).join('');
+      var edit = open ? '<tr class="g19-edit"><td colspan="3"><div class="g19-tl">' + p.usage.map(function (x) {
+        var ov = p.overrides && p.overrides[x.kind] !== undefined ? p.overrides[x.kind] : '';
+        return '<label class="g19-tf"><span>' + h(short[x.kind] || x.kind) + '<small>now ' + x.cap + ' a day</small></span><input class="sxa-in" type="number" min="0" data-g19-p="' + x.kind + '" value="' + ov + '" placeholder="Team limit"></label>';
+      }).join('') + '</div><div class="sxa-actions" style="justify-content:flex-start"><button class="sxa-btn sxa-btn-gold" data-sxa="use-person" data-v="' + h(p.user_id) + '">Save ' + h(p.name.split(' ')[0]) + '’s limits</button><button class="sxa-btn" data-sxa="use-open" data-v="">Close</button></div><div class="sxa-note">Empty means the team limit. Never above Samora’s.</div></td></tr>' : '';
+      return '<tr><td><b>' + h(p.name) + '</b><div class="sxa-note" style="margin:2px 0 0">' + h(p.email) + '</div></td><td><div class="g19-ucs">' + (chips || '<span class="sxa-note">Nothing yet today</span>') + '</div><button class="g19-lnk" data-sxa="use-open" data-v="' + h(p.user_id) + '">' + (open ? 'Editing' : 'Limits') + '</button></td>' +
+        '<td style="text-align:right"><button class="toggle-pill' + (p.can_export ? ' on' : '') + '" role="switch" aria-checked="' + p.can_export + '" aria-label="' + h(p.name) + ' can export audiences" data-sxa="use-export" data-v="' + h(p.user_id) + '"><i></i></button></td></tr>' + edit;
+    }).join('');
+    var ex = (u.exports || []).map(function (x) { return '<tr><td>' + h(new Date(x.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })) + '</td><td>' + h(x.by) + '</td><td>' + h({ meta: 'Meta', linkedin_people: 'LinkedIn contacts', linkedin_companies: 'LinkedIn companies' }[x.format] || x.format) + '</td><td style="text-align:right">' + x.rows + '</td></tr>'; }).join('');
+    var r = this.rev;
+    var rrows = r ? (r.month || []).map(function (m) { return '<tr><td>' + h(m.name) + '</td><td style="text-align:right">' + m.paid + '</td><td style="text-align:right">' + m.free + '</td><td style="text-align:right">' + m.found + '</td></tr>'; }).join('') : '';
+    body.innerHTML = '<div class="sxa-pf">' +
+      (u.note ? '<div class="sxa-note" style="color:var(--c-partial)">' + h(u.note) + '</div>' : '') +
+      '<div class="sxa-sec" style="margin-top:4px">Daily limits for the team</div>' +
+      '<div class="sxa-note">Limits keep costs predictable and stop anything running in a loop. Samora sets the most your plan allows; you can set lower ones for everyone here, or for one person below.</div>' + team +
+      '<div class="sxa-actions" style="justify-content:flex-start"><button class="sxa-btn sxa-btn-gold" data-sxa="use-team">Save team limits</button></div>' +
+      '<div class="sxa-sec">People today</div>' +
+      '<table class="sxa-tbl g19-ptbl" style="width:100%"><thead><tr><th style="text-align:left">Person</th><th style="text-align:left">Used today</th><th style="text-align:right">Can export audiences</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<div class="sxa-sec">Ad audience exports</div>' +
+      '<label class="g19-sw"><button class="toggle-pill' + (u.export_provider_data ? ' on' : '') + '" role="switch" aria-checked="' + !!u.export_provider_data + '" data-sxa="use-provider"><i></i></button><span><b>Include phone numbers and emails found through Lusha or Apollo</b><small>Off by default. Their contracts usually limit data to your own internal use; check yours before switching this on. Your own records and people’s replies are always included.</small></span></label>' +
+      (ex ? '<table class="sxa-tbl" style="width:100%;max-width:640px;margin-top:10px"><thead><tr><th style="text-align:left">When</th><th style="text-align:left">Who</th><th style="text-align:left">Format</th><th style="text-align:right">Rows</th></tr></thead><tbody>' + ex + '</tbody></table>' : '<div class="sxa-note">No exports yet.</div>') +
+      (r ? '<div class="sxa-sec">Contact reveals this month</div>' + (rrows ? '<table class="sxa-tbl" style="width:100%;max-width:560px"><thead><tr><th style="text-align:left">Person</th><th style="text-align:right">Paid</th><th style="text-align:right">Free</th><th style="text-align:right">With a phone</th></tr></thead><tbody>' + rrows + '</tbody></table>' : '<div class="sxa-note">No reveals yet this month.</div>') : '') +
+    '</div>';
+  };
+  Console.prototype._g19Save = async function (payload, okMsg) {
+    var d;
+    try { d = await this.call('org_admin_usage_save', this._body(payload)); } catch (e) { d = { ok: false, error: e.message }; }
+    if (!d || !d.ok) { this.toast((d && d.error) || 'Could not save.', true); return; }
+    this.use = d;
+    try { var rv = await this.call('org_admin_reveals_get', this._body()); if (rv && rv.ok) this.rev = rv; } catch (e) {}
+    this.toast(d.note || okMsg);
+    this._renderReveals(this.el.querySelector('#sxa-body'));
+  };
+  Console.prototype._g19Act = function (a, t) {
+    var self = this;
+    if (a === 'use-open') { this.useOpen = t.getAttribute('data-v') || null; this._renderReveals(this.el.querySelector('#sxa-body')); return true; }
+    if (a === 'use-team') { var def = {}; this.el.querySelectorAll('[data-g19-team]').forEach(function (i) { def[i.getAttribute('data-g19-team')] = i.value === '' ? null : i.value; }); this._g19Save({ defaults: def }, 'Team limits saved'); return true; }
+    if (a === 'use-person') { var caps = {}; this.el.querySelectorAll('[data-g19-p]').forEach(function (i) { caps[i.getAttribute('data-g19-p')] = i.value === '' ? null : i.value; }); this.useOpen = null; this._g19Save({ person: { user_id: t.getAttribute('data-v'), caps: caps } }, 'Limits saved'); return true; }
+    if (a === 'use-export') { var on = !t.classList.contains('on'); t.classList.toggle('on', on); this._g19Save({ export_user: { user_id: t.getAttribute('data-v'), on: on } }, on ? 'They can export audiences now' : 'Export switched off for them'); return true; }
+    if (a === 'use-provider') { var on2 = !t.classList.contains('on'); t.classList.toggle('on', on2); this._g19Save({ export_provider_data: on2 }, on2 ? 'Lusha and Apollo data will be included in exports' : 'Lusha and Apollo data stay out of exports'); return true; }
+    void self;
+    return false;
+  };
+
 
   window.SamoraAccessConsole = {
     mount: function (el, opts) {
