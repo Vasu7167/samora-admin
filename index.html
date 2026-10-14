@@ -583,6 +583,12 @@ function renderOrgPage(org, users, products=[], kv={}){
         <div id="usage-caps-${org.org_id}" class="ucap-wrap"><div class="empty">Loading</div></div>
       </div>
       <div class="card">
+        <div class="card-title">SAM's AI</div>
+        <div class="card-sub">Checks this organisation's AI key and model: writing, live web search (SAM-TAM, signals) and structured answers. About 20 seconds.</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:8px"><button class="btn btn-sm btn-outline" onclick="runAiSelftest('${org.org_id}', this)">Check SAM's AI</button><span id="ai-check-msg-${org.org_id}" style="font-size:12px;color:var(--text3)"></span></div>
+        <div id="ai-check-${org.org_id}"></div>
+      </div>
+      <div class="card">
         <div class="card-sub" style="margin-bottom:12px">Exactly what this client's admin sees under Admin in SamoraOS, with your Samora rights on top: you can act on any org, go past the seat cap, and change an account owner. Every change here is logged against Samora.</div>
         <div id="sxa-admin-mount"><div class="empty">Loading</div></div>
       </div>
@@ -1840,6 +1846,20 @@ async function saveUsageCaps(orgId){
   const d = await edgeCall('admin_usage_caps_save', { org_id: orgId, daily: daily, monthly: monthly });
   if (d && d.ok) { renderUsageCaps(orgId, d); const m2 = document.getElementById('usage-caps-msg-' + orgId); if (m2) { m2.textContent = 'Saved'; m2.style.color = 'var(--green, #4a7)'; } if (window._sxaAdmin) { window._sxaAdmin.use = null; } }
   else if (msg) { msg.textContent = 'Error: ' + ((d && d.error) || 'unknown'); msg.style.color = 'var(--coral)'; }
+}
+
+// ── Check SAM's AI (2026-10-14, Drop I) ───────────────────────────────────
+async function runAiSelftest(orgId, btn){
+  const box = document.getElementById('ai-check-' + orgId), msg = document.getElementById('ai-check-msg-' + orgId);
+  if (btn) btn.disabled = true; if (msg) { msg.textContent = 'Checking…'; msg.style.color = 'var(--text3)'; }
+  const d = await edgeCall('admin_ai_selftest', { org_id: orgId });
+  if (btn) btn.disabled = false;
+  if (!d || !d.ok) { if (msg) { msg.textContent = 'Error: ' + ((d && d.error) || 'not available'); msg.style.color = 'var(--coral)'; } return; }
+  if (msg) msg.textContent = 'Engine ' + esc(d.engine) + ' · model ' + esc(d.model) + (d.fallback_model ? ' (fallback ' + esc(d.fallback_model) + ')' : '') + ' · key from ' + esc(d.key_source);
+  if (!d.checks || !d.checks.length) { box.innerHTML = '<div class="empty">No Gemini key for this organisation, so nothing to check.</div>'; return; }
+  box.innerHTML = '<table class="ucap" style="width:100%"><thead><tr><th></th><th>Result</th><th>Time</th><th>Detail</th></tr></thead><tbody>' + d.checks.map(function(c){
+    return '<tr><td>' + esc(c.label) + '</td><td style="color:' + (c.ok ? 'var(--green, #4a7)' : 'var(--coral)') + ';font-weight:600">' + (c.ok ? 'Working' : 'Failing: ' + esc(c.kind || 'unknown')) + '</td><td>' + (c.ms / 1000).toFixed(1) + 's</td><td style="font-size:11px">' + esc(c.ok ? (c.sample || '') : ((c.status ? 'HTTP ' + c.status + ': ' : '') + (c.message || ''))) + '</td></tr>';
+  }).join('') + '</tbody></table>';
 }
 async function saveSeatLimit(orgId){
   const el = $('seat-limit'); const msg = $('seat-limit-msg');
