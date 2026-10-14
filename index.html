@@ -1859,7 +1859,17 @@ async function runAiSelftest(orgId, btn){
   if (!d.checks || !d.checks.length) { box.innerHTML = '<div class="empty">No Gemini key for this organisation, so nothing to check.</div>'; return; }
   box.innerHTML = '<table class="ucap" style="width:100%"><thead><tr><th></th><th>Result</th><th>Time</th><th>Detail</th></tr></thead><tbody>' + d.checks.map(function(c){
     return '<tr><td>' + esc(c.label) + '</td><td style="color:' + (c.ok ? 'var(--green, #4a7)' : 'var(--coral)') + ';font-weight:600">' + (c.ok ? 'Working' : 'Failing: ' + esc(c.kind || 'unknown')) + '</td><td>' + (c.ms / 1000).toFixed(1) + 's</td><td style="font-size:11px">' + esc(c.ok ? (c.sample || '') : ((c.status ? 'HTTP ' + c.status + ': ' : '') + (c.message || ''))) + '</td></tr>';
-  }).join('') + '</tbody></table>';
+  }).join('') + '</tbody></table>' + _tamLogHtml(d.sam_tam_log);
+}
+function _tamLogHtml(log){
+  log = Array.isArray(log) ? log : [];
+  if (!log.length) return '<div style="margin-top:14px;font-size:12px;color:var(--text3)">No SAM-TAM searches yet for this organisation.</div>';
+  const kinds = { search: 'Found (live search)', knowledge: 'Found (what SAM knows)', quota_minute: 'Per-minute limit', quota_day: 'Daily allowance used up', timeout: 'Took too long', unreadable: 'Unreadable answer', overloaded: 'AI busy', grounding_unavailable: 'Live search not allowed on this key', key_invalid: 'Key not valid', access_denied: 'Access denied', blocked: 'Blocked by safety', unknown: 'Other' };
+  return '<div style="margin-top:16px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3)">Last ' + log.length + ' SAM-TAM searches</div>' +
+    '<table class="ucap" style="width:100%;margin-top:6px"><thead><tr><th>When</th><th>Search</th><th>Result</th><th>Time</th><th>Detail</th></tr></thead><tbody>' + log.map(function(e){
+      const when = (function(){ try { return new Date(e.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch (x) { return ''; } })();
+      return '<tr><td style="white-space:nowrap">' + esc(when) + '</td><td style="font-size:11.5px">' + esc(e.q || '') + ' <span style="color:var(--text3)">(' + esc(String(e.asked || '')) + ')</span></td><td style="font-weight:600;color:' + (e.ok ? 'var(--green, #4a7)' : 'var(--coral)') + '">' + esc(e.ok ? (kinds[e.kind] || 'Found') + ': ' + (e.found || 0) : (kinds[e.kind] || e.kind || 'Failed')) + '</td><td>' + ((e.ms || 0) / 1000).toFixed(1) + 's</td><td style="font-size:11px;word-break:break-word">' + esc(e.detail || '') + '</td></tr>';
+    }).join('') + '</tbody></table>';
 }
 async function saveSeatLimit(orgId){
   const el = $('seat-limit'); const msg = $('seat-limit-msg');
