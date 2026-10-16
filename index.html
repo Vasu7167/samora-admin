@@ -121,6 +121,19 @@ input,select,button,textarea{font-family:var(--font)}
 .archived-wrap summary:before{content:'\25B8  '}
 .archived-wrap[open] summary:before{content:'\25BE  '}
 .ap-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}
+.plan-pick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.plan-opt{display:flex;flex-direction:column;gap:6px;text-align:left;padding:12px 14px;border-radius:var(--r-md);border:1px solid var(--border);background:var(--bg3);color:var(--text);cursor:pointer;font-family:var(--font);transition:border-color 120ms var(--ease)}
+.plan-opt b{font-size:13px;font-weight:600} .plan-opt span{font-size:11px;line-height:1.5;color:var(--text3)}
+.plan-opt:hover{border-color:var(--gold2)} .plan-opt.on{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold)} .plan-opt.on b{color:var(--gold)} .plan-opt:disabled{opacity:.6;cursor:default}
+.plan-msg{font-size:12px;color:var(--text3);margin-top:8px;min-height:16px}
+.plan-src{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--text2);padding:8px 10px;border-radius:var(--r-sm);background:var(--bg3);margin-bottom:10px}
+.ai-scope{display:inline-flex;border:1px solid var(--border2);border-radius:var(--r-sm);overflow:hidden}
+.ai-scope button{background:none;border:0;color:var(--text3);font:inherit;font-size:11px;padding:5px 10px;cursor:pointer} .ai-scope button.on{background:var(--bg3);color:var(--gold)}
+.ai-sec{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin:14px 0 6px}
+.ai-feats{display:flex;flex-direction:column;gap:6px}
+.ai-f{display:grid;grid-template-columns:150px minmax(0,1fr) 70px;gap:10px;align-items:center;font-size:12px}
+.ai-f i{height:6px;border-radius:999px;background:var(--bg3);overflow:hidden} .ai-f i b{display:block;height:100%;background:var(--gold)} .ai-f em{font-style:normal;text-align:right;color:var(--text3);font-variant-numeric:tabular-nums}
+@media (max-width:700px){.plan-pick{grid-template-columns:1fr}.ai-f{grid-template-columns:110px minmax(0,1fr) 56px}}
 .us-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}
 .us-tile{border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;background:var(--bg3)}
 .us-tile .k{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)}
@@ -578,6 +591,11 @@ function renderOrgPage(org, users, products=[], kv={}){
         </div>
       </div>
       <div class="card">
+        <div class="card-title">Plan</div>
+        <div class="card-sub">What this organisation can do: live SAMpaigns, people in sequence, the size of a SAMpaign, searches and AI. Sending rules (mailbox limits, LinkedIn limits, opt-outs) are the same on every plan.</div>
+        <div id="plan-${org.org_id}"><div class="empty">Loading</div></div>
+      </div>
+      <div class="card">
         <div class="card-title">Usage limits</div>
         <div class="card-sub">The most each person in this organisation can do in a day, and optionally the whole organisation in a month. Their admin can set lower limits in Team &amp; access, Usage, never higher. Empty uses Samora's default.</div>
         <div id="usage-caps-${org.org_id}" class="ucap-wrap"><div class="empty">Loading</div></div>
@@ -855,17 +873,29 @@ function renderOrgPage(org, users, products=[], kv={}){
       <div class="card">
         <div class="card-title">Usage
           <span style="display:flex;gap:8px">
-            <select id="us-month" class="btn-sm" style="background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:var(--r-sm)" onchange="loadUsage('${org.org_id}')">${usageMonthOptions()}</select>
+            <select id="us-month" class="btn-sm" style="background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:var(--r-sm)" onchange="loadUsage('${org.org_id}');loadAiUse('${org.org_id}')">${usageMonthOptions()}</select>
             <button class="btn btn-sm btn-outline" onclick="usageCsv()">CSV</button>
           </span></div>
         <div class="card-sub"><b>Seat days</b> are what this client is billed on: every day a person's access was on, from the day it was switched on through the day it was switched off. <b>Used days</b> are days the person actually opened SamoraOS or used the LinkedIn panel. They measure adoption and are never billed.</div>
         <div id="us-body"><div class="empty">Loading usage</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">AI use
+          <span style="display:flex;gap:8px">
+            <span class="ai-scope" role="group" aria-label="Whose AI use">
+              <button type="button" class="on" data-ai-scope="org" onclick="loadAiUse('${org.org_id}','org')">This organisation</button><button type="button" data-ai-scope="all" onclick="loadAiUse('${org.org_id}','all')">All organisations</button>
+            </span>
+          </span></div>
+        <div class="card-sub">Every AI call SAM makes, counted per person and day: calls, words in and out, and web searches. The cost is an estimate at Google's paid prices; while the AI key is on the free tier it costs nothing.</div>
+        <div id="ai-use"><div class="empty">Loading</div></div>
       </div>
     </div>`;
 
   restoreSection();
   _mountAccessConsole(org.org_id);
   loadUsage(org.org_id);
+  loadPlan(org.org_id);
+  loadAiUse(org.org_id, 'org');
   loadCompetitors(org.org_id);
   _renderGoalTemplates(kv);
   loadCaseStudies(org.org_id);
@@ -1826,7 +1856,9 @@ async function loadUsageCaps(orgId){
 function renderUsageCaps(orgId, d){
   const box = document.getElementById('usage-caps-' + orgId); if (!box) return;
   const kinds = Object.keys(d.defaults || {});
-  box.innerHTML = '<table class="ucap"><thead><tr><th></th><th>Per person a day</th><th>Whole org a month</th></tr></thead><tbody>' +
+  const who = d.plan_label ? (d.custom ? '<div class="plan-src"><span><b>Set here</b>, instead of ' + esc(d.plan_label) + '\'s limits.</span><button class="btn btn-sm btn-outline" type="button" onclick="resetUsageCaps(\'' + orgId + '\')">Use the plan\'s limits</button></div>'
+    : '<div class="plan-src"><span><b>From ' + esc(d.plan_label) + '.</b> Saving here sets this organisation\'s own limits instead.</span></div>') : '';
+  box.innerHTML = who + '<table class="ucap"><thead><tr><th></th><th>Per person a day</th><th>Whole org a month</th></tr></thead><tbody>' +
     kinds.map(function(k){
       const dv = d.daily[k] === d.defaults[k] ? '' : d.daily[k];
       const mv = d.monthly[k] === null || d.monthly[k] === undefined ? '' : d.monthly[k];
@@ -1846,6 +1878,74 @@ async function saveUsageCaps(orgId){
   const d = await edgeCall('admin_usage_caps_save', { org_id: orgId, daily: daily, monthly: monthly });
   if (d && d.ok) { renderUsageCaps(orgId, d); const m2 = document.getElementById('usage-caps-msg-' + orgId); if (m2) { m2.textContent = 'Saved'; m2.style.color = 'var(--green, #4a7)'; } if (window._sxaAdmin) { window._sxaAdmin.use = null; } }
   else if (msg) { msg.textContent = 'Error: ' + ((d && d.error) || 'unknown'); msg.style.color = 'var(--coral)'; }
+}
+
+async function resetUsageCaps(orgId){
+  const msg = document.getElementById('usage-caps-msg-' + orgId); if (msg) { msg.textContent = 'Saving…'; msg.style.color = 'var(--text3)'; }
+  const d = await edgeCall('admin_usage_caps_save', { org_id: orgId, reset_to_plan: true });
+  if (d && d.ok) renderUsageCaps(orgId, d); else if (msg) { msg.textContent = 'Error: ' + ((d && d.error) || 'unknown'); msg.style.color = 'var(--coral)'; }
+}
+
+// ── Plan (Drop O2) ─────────────────────────────────────────────────────────
+const PLAN_INFO = {
+  '': ['No plan', 'Nothing is limited by a plan. Samora\'s default daily limits apply.'],
+  power: ['SAM Power', '5 live SAMpaigns · 400 people in sequence · 100 people and 10 companies per SAMpaign · AI 100 writes and 40 reads a day · SAM-TAM 5 a day, 25 a month · no audience exports · LinkedIn as an add-on'],
+  full_power: ['SAM Full Power', '12 live SAMpaigns · 1,000 people in sequence · 250 people and 20 companies per SAMpaign · AI without daily limits · SAM-TAM 10 a day · one audience export a day · LinkedIn included']
+};
+async function loadPlan(orgId, set){
+  const box = document.getElementById('plan-' + orgId); if (!box) return;
+  const d = await edgeCall(set === undefined ? 'admin_plan_get' : 'admin_plan_set', set === undefined ? { org_id: orgId } : { org_id: orgId, plan: set });
+  if (!d || !d.ok) { box.innerHTML = '<div class="empty">' + esc((d && d.error) || 'Plans need the Drop O2 edge function.') + '</div>'; return; }
+  const cur = d.plan || '';
+  box.innerHTML = '<div class="plan-pick" role="radiogroup" aria-label="Plan">' + Object.keys(PLAN_INFO).map(function (k) {
+    return '<button type="button" role="radio" aria-checked="' + (k === cur) + '" class="plan-opt' + (k === cur ? ' on' : '') + '" onclick="pickPlan(\'' + orgId + '\',\'' + k + '\',this)"><b>' + PLAN_INFO[k][0] + '</b><span>' + PLAN_INFO[k][1] + '</span></button>';
+  }).join('') + '</div><div class="plan-msg" id="plan-msg-' + orgId + '">' + (set !== undefined ? 'Saved. ' + (cur ? 'This organisation is on ' + esc(d.label) + ' now; people see it in You, Plan and usage.' : 'No plan: nothing is limited by a plan.') : '') + '</div>';
+  if (set !== undefined) loadUsageCaps(orgId);
+}
+function pickPlan(orgId, k, btn){
+  if (btn && btn.classList.contains('on')) return;
+  const m = document.getElementById('plan-msg-' + orgId); if (m) m.textContent = 'Saving…';
+  document.querySelectorAll('#plan-' + orgId + ' .plan-opt').forEach(function (b) { b.disabled = true; });
+  loadPlan(orgId, k);
+}
+
+// ── AI use (Drop O2) ───────────────────────────────────────────────────────
+let _aiScope = 'org';
+const _aiFeat = {
+  callWebSearchAI: 'Web search answers', generate_daily_brief: 'Daily brief', panel_person_insight: 'Profile reads', sam_review: 'Reviews', sam_tam_knowledge: 'SAM-TAM',
+  sam_write_reply: 'Reply drafts', write_sampaign_drafts: 'Email drafts', account_signals: 'Account signals', icp_score: 'Fit scores', retry_call: 'Other AI calls'
+};
+function _aiFeatName(k){ return _aiFeat[k] || (/^write_linkedin_/.test(k) ? 'LinkedIn messages' : /^selftest_/.test(k) ? 'AI checks' : k.replace(/_/g, ' ')); }
+function _aiNum(n){ return Number(n || 0).toLocaleString('en-IN'); }
+function _aiUsd(n){ return '$' + Number(n || 0).toFixed(2); }
+function _aiTok(o){ return (o.in || 0) + (o.in_lite || 0) + (o.out || 0) + (o.out_lite || 0); }
+async function loadAiUse(orgId, scope){
+  if (scope) _aiScope = scope;
+  document.querySelectorAll('[data-ai-scope]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-ai-scope') === _aiScope); });
+  const box = document.getElementById('ai-use'); if (!box) return;
+  box.innerHTML = '<div class="empty">Loading</div>';
+  const month = ($('us-month') || {}).value;
+  const d = await edgeCall('admin_ai_usage', _aiScope === 'all' ? { month: month } : { org_id: orgId, month: month });
+  if (!d || !d.ok) { box.innerHTML = '<div class="empty">' + esc((d && d.error) || 'AI use needs the Drop O2 edge function.') + '</div>'; return; }
+  const os = d.orgs || [], us = d.users || [];
+  const tot = os.reduce(function (a, o) { a.calls += o.calls; a.cost += o.cost_usd; a.fc += o.forecast_usd; a.tok += _aiTok(o); a.search += o.search; return a; }, { calls: 0, cost: 0, fc: 0, tok: 0, search: 0 });
+  if (!os.length) { box.innerHTML = '<div class="empty">No AI use counted in this month yet. Counting starts with the Drop O2 edge function.</div>'; return; }
+  const feats = {};
+  os.forEach(function (o) { Object.keys(o.features || {}).forEach(function (k) { const n = _aiFeatName(k); feats[n] = (feats[n] || 0) + o.features[k]; }); });
+  const fk = Object.keys(feats).sort(function (a, b) { return feats[b] - feats[a]; });
+  const maxF = fk.length ? feats[fk[0]] : 1;
+  box.innerHTML = '<div class="us-tiles">' +
+      '<div class="us-tile"><div class="k">AI calls</div><div class="v">' + _aiNum(tot.calls) + '</div><div class="d">' + _aiNum(tot.search) + ' web searches</div></div>' +
+      '<div class="us-tile"><div class="k">Tokens</div><div class="v">' + (tot.tok >= 1e6 ? (tot.tok / 1e6).toFixed(1) + 'M' : _aiNum(Math.round(tot.tok / 1000)) + 'K') + '</div><div class="d">in and out, thinking counted as out</div></div>' +
+      '<div class="us-tile"><div class="k">Cost so far</div><div class="v">' + _aiUsd(tot.cost) + '</div><div class="d">estimate, paid prices</div></div>' +
+      '<div class="us-tile"><div class="k">Month forecast</div><div class="v">' + _aiUsd(tot.fc) + '</div><div class="d">at this month\'s pace</div></div>' +
+    '</div>' +
+    (fk.length ? '<div class="ai-sec">By feature</div><div class="ai-feats">' + fk.slice(0, 10).map(function (k) { return '<div class="ai-f"><span>' + esc(k) + '</span><i><b style="width:' + Math.max(3, Math.round(feats[k] / maxF * 100)) + '%"></b></i><em>' + _aiNum(feats[k]) + '</em></div>'; }).join('') + '</div>' : '') +
+    (_aiScope === 'all' ? '<div class="ai-sec">By organisation</div><div class="us-wrap"><table class="ap-table"><tr><th>Organisation</th><th class="n">Calls</th><th class="n">Searches</th><th class="n">Cost so far</th><th class="n">Forecast</th></tr>' +
+      os.map(function (o) { return '<tr><td>' + esc(o.name) + '</td><td class="n">' + _aiNum(o.calls) + '</td><td class="n">' + _aiNum(o.search) + '</td><td class="n">' + _aiUsd(o.cost_usd) + '</td><td class="n">' + _aiUsd(o.forecast_usd) + '</td></tr>'; }).join('') + '</table></div>' : '') +
+    (us.length ? '<div class="ai-sec">By person</div><div class="us-wrap"><table class="ap-table"><tr><th>Person</th><th class="n">Calls</th><th class="n">Searches</th><th class="n">Cost so far</th></tr>' +
+      us.slice(0, 50).map(function (u) { return '<tr><td>' + esc(u.email || u.user_id) + '</td><td class="n">' + _aiNum(u.calls) + '</td><td class="n">' + _aiNum(u.search) + '</td><td class="n">' + _aiUsd(u.cost_usd) + '</td></tr>'; }).join('') + '</table></div>' : '') +
+    '<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5">' + esc(d.note || '') + ' Prices per million tokens: $' + d.prices.in + ' in and $' + d.prices.out + ' out on the main model, $' + d.prices.in_lite + ' and $' + d.prices.out_lite + ' on Lite; $' + d.prices.search + ' a web search.</div>';
 }
 
 // ── Check SAM's AI (2026-10-14, Drop I) ───────────────────────────────────
@@ -2962,4 +3062,3 @@ async function saveSeatLimit(orgId){
 </script>
 </body>
 </html>
- 
