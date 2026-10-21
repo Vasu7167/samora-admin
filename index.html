@@ -1913,7 +1913,7 @@ function pickPlan(orgId, k, btn){
 let _aiScope = 'org';
 const _aiFeat = {
   callWebSearchAI: 'Web search answers', generate_daily_brief: 'Daily brief', panel_person_insight: 'Profile reads', sam_review: 'Reviews', sam_tam_knowledge: 'SAM-TAM',
-  sam_write_reply: 'Reply drafts', write_sampaign_drafts: 'Email drafts', account_signals: 'Account signals', icp_score: 'Fit scores', retry_call: 'Other AI calls'
+  sam_write_reply: 'Reply drafts', write_sampaign_drafts: 'Email drafts', account_signals: 'Account signals', icp_score: 'Fit scores', retry_call: 'Other AI calls', person_card: 'Profile reads for SAMpaigns', li_review: 'Second reads (quality check)'
 };
 function _aiFeatName(k){ return _aiFeat[k] || (/^write_linkedin_/.test(k) ? 'LinkedIn messages' : /^selftest_/.test(k) ? 'AI checks' : k.replace(/_/g, ' ')); }
 function _aiNum(n){ return Number(n || 0).toLocaleString('en-IN'); }
