@@ -522,7 +522,7 @@ async function selectOrg(orgId){
   const [users, productsData, kvData] = await Promise.all([
     edgeCall('admin_list_users',{org_id:orgId}),
     edgeCall('get_products',{org_id:orgId}),
-    edgeCall('admin_get_org_settings',{org_id:orgId, keys:['health_score_weights','notification_rules','enrichment_apollo_key','enrichment_lusha_key','enrichment_hunter_key','stakeholder_scout_profile','scout_batch_size','campaign_goal_templates','seat_limit','addon_request_linkedin','addon_request_sam_tam','weekly_targets']})
+    edgeCall('admin_get_org_settings',{org_id:orgId, keys:['health_score_weights','notification_rules','enrichment_apollo_key','enrichment_lusha_key','enrichment_hunter_key','enrichment_zoominfo_key','stakeholder_scout_profile','scout_batch_size','campaign_goal_templates','seat_limit','addon_request_linkedin','addon_request_sam_tam','weekly_targets']})
   ]);
   renderOrgPage(org, users.users||[], productsData.products||[], (kvData&&kvData.settings)||{});
 }
@@ -769,13 +769,13 @@ function renderOrgPage(org, users, products=[], kv={}){
         <div class="card">
           <div class="card-title">Enrichment keys (org-wide)</div>
           <div class="card-sub">Used for contact scouting. Reps can still override with personal keys.</div>
-          ${['apollo','lusha','hunter'].map(function(p){
+          ${['apollo','lusha','zoominfo','hunter'].map(function(p){
             var has = !!kv['enrichment_'+p+'_key'];
             // "Saved, enter to update" could not express "this key is wrong,
             // take it out". A connected key now says so, and can be removed.
             return '<div style="margin-top:8px">'+
               '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
-                '<span style="font-size:11px;color:var(--text3);text-transform:capitalize">'+p+'</span>'+
+                '<span style="font-size:11px;color:var(--text3);text-transform:capitalize">'+(p==='zoominfo'?'ZoomInfo':p)+'</span>'+
                 (has
                   ? '<span style="font-size:11px;color:var(--green);display:inline-flex;align-items:center;gap:4px">'+
                       '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>'+
@@ -783,7 +783,11 @@ function renderOrgPage(org, users, products=[], kv={}){
                     '<button onclick="clearEnrichmentKey(\''+p+'\',\''+org.org_id+'\')" style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--text3);border-radius:var(--r-sm);padding:2px 9px;font-size:11px;cursor:pointer">Disconnect</button>'
                   : '<span style="font-size:11px;color:var(--text3)">Not connected</span>')+
               '</div>'+
-              '<input class="key-input" id="enr-'+p+'" type="password" placeholder="'+(has?'Enter a new key to replace it':'Enter API key')+'" oninput="markDirty()"/>'+
+              // ZoomInfo signs in with a client ID and secret; saved as id:secret.
+              (p==='zoominfo'
+                ? '<input class="key-input" id="enr-zoominfo-id" type="text" placeholder="'+(has?'New client ID to replace it':'Client ID')+'" oninput="markDirty()" style="margin-bottom:6px"/>'+
+                  '<input class="key-input" id="enr-zoominfo" type="password" placeholder="Client secret" oninput="markDirty()"/>'
+                : '<input class="key-input" id="enr-'+p+'" type="password" placeholder="'+(has?'Enter a new key to replace it':'Enter API key')+'" oninput="markDirty()"/>')+
             '</div>';
           }).join('')}
         </div>
@@ -1161,7 +1165,12 @@ function renderProspectProfileHTML(kv){
     '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin:8px 0 6px">Seniority</div>' +
     '<div>'+_chipRow('pp-sen', SCOUT_SENIORITIES, sens)+'</div>' +
     '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">Locations (optional, comma separated)</div>' +
-    '<input id="pp-locs" value="'+esc(locs.join(', '))+'" placeholder="e.g. Italy, Europe" oninput="markDirty()" style="'+inputStyle+'"/>';
+    '<input id="pp-locs" value="'+esc(locs.join(', '))+'" placeholder="e.g. Italy, Europe" oninput="markDirty()" style="'+inputStyle+'"/>' +
+    '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px">Scout with first</div>' +
+    '<select id="pp-provider" onchange="markDirty()" style="'+inputStyle+'">' +
+      [['','Automatic (Lusha, Apollo, ZoomInfo, Hunter)'],['lusha','Lusha'],['apollo','Apollo'],['zoominfo','ZoomInfo'],['hunter','Hunter']].map(function(o){ return '<option value="'+o[0]+'"'+((p.provider||'')===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('') +
+    '</select>' +
+    '<div style="font-size:10px;color:var(--text3);margin-top:4px">If that provider finds nobody, the next connected one is tried.</div>';
 }
 function _collectChips(group){ return Array.from(document.querySelectorAll('input[data-group="'+group+'"]:checked')).map(function(el){return el.value;}); }
 function renderNotifRulesHTML(kv){
@@ -1190,11 +1199,14 @@ async function saveOrgPolicy(orgId){
     NR_META.forEach(function(m){ var rc={enabled:$('nr-rule-'+m.key)?.checked}; m.params.forEach(function(p){ var el=$('nr-'+m.key+'-'+p.key); rc[p.key]=el?(parseInt(el.value,10)||0):p.def; }); nr.rules[m.key]=rc; });
     var csv=function(id){ return (($(id)?$(id).value:'')||'').split(',').map(function(x){return x.trim();}).filter(Boolean); };
     var prospect={ departments:_collectChips('pp-dept'), seniorities:_collectChips('pp-sen'), jobTitles:csv('pp-titles'), locations:csv('pp-locs') };
+    // Which provider scouting tries first. Empty means the default order
+    // (Lusha, Apollo, ZoomInfo, Hunter, skipping any not connected).
+    var ppProv=$('pp-provider')?.value||''; if(ppProv) prospect.provider=ppProv;
     var jobs=[ edgeCall('admin_set_org_setting',{org_id:orgId,key:'health_score_weights',value:JSON.stringify(hw)}), edgeCall('admin_set_org_setting',{org_id:orgId,key:'notification_rules',value:JSON.stringify(nr)}), edgeCall('admin_set_org_setting',{org_id:orgId,key:'stakeholder_scout_profile',value:JSON.stringify(prospect)}) ];
-    ['apollo','lusha','hunter'].forEach(function(p){ var v=$('enr-'+p)?.value; if(v){ jobs.push(edgeCall('admin_set_org_setting',{org_id:orgId,key:'enrichment_'+p+'_key',value:v})); } });
+    ['apollo','lusha','zoominfo','hunter'].forEach(function(p){ var v=$('enr-'+p)?.value?.trim(); if(p==='zoominfo'){ var zid=$('enr-zoominfo-id')?.value?.trim(); if(!v&&!zid) return; if(!v||!zid){ jobs.push(Promise.resolve({ok:false,error:'ZoomInfo needs both the client ID and the client secret'})); return; } v=zid+':'+v; } if(v){ jobs.push(edgeCall('admin_set_org_setting',{org_id:orgId,key:'enrichment_'+p+'_key',value:v})); } });
     var results=await Promise.all(jobs);
     if(results.every(function(r){return r&&r.ok;})){ setSaveStatus('Saved','ok'); }
-    else{ setSaveStatus('Some settings failed to save','err'); }
+    else{ var firstErr=(results.find(function(r){return r&&!r.ok&&r.error;})||{}).error; setSaveStatus('Some settings failed to save'+(firstErr?': '+firstErr:''),'err'); }
   }catch(e){ setSaveStatus('Error: '+(e.message||'unknown'),'err'); }
 }
 
@@ -2705,9 +2717,9 @@ async function saveSeatLimit(orgId){
     body.innerHTML =
       '<div class="sxa-pf">' +
         '<div class="sxa-sec" style="margin-top:4px">Contact reveals</div>' +
-        '<div class="sxa-note">Reps reveal a person’s phone and email with one click in Samora for LinkedIn. Samora checks its own records first, then Lusha and Apollo. A reveal is saved for the whole team, so nobody pays for the same person twice.</div>' +
+        '<div class="sxa-note">Reps reveal a person’s phone and email with one click in Samora for LinkedIn. Samora checks its own records first, then Lusha, ZoomInfo and Apollo. A reveal is saved for the whole team, so nobody pays for the same person twice.</div>' +
         '<label class="sxa-f" style="max-width:260px"><span class="sxa-lbl">Reveals per rep per day</span><input class="sxa-in" type="number" min="0" max="1000" id="sxaRevCap" value="' + h(String(r.cap)) + '"></label>' +
-        '<div class="sxa-note">0 switches reveals off. Each paid reveal usually uses one Lusha or Apollo credit.</div>' +
+        '<div class="sxa-note">0 switches reveals off. Each paid reveal usually uses one Lusha, ZoomInfo or Apollo credit.</div>' +
         '<div class="sxa-actions" style="justify-content:flex-start"><button class="sxa-btn sxa-btn-gold" data-sxa="rev-save">Save limit</button></div>' +
         '<div class="sxa-sec">This month</div>' +
         (rows ? '<table class="sxa-tbl" style="width:100%;max-width:560px"><thead><tr><th style="text-align:left">Person</th><th style="text-align:right">Paid</th><th style="text-align:right">Free</th><th style="text-align:right">With a phone</th></tr></thead><tbody>' + rows + '</tbody></table><div class="sxa-note">' + r.total_paid + (r.total_paid === 1 ? ' paid reveal, ' : ' paid reveals, ') + r.total_found + ' with a phone number.</div>' : '<div class="sxa-note">No reveals yet this month.</div>') +
@@ -3023,7 +3035,7 @@ async function saveSeatLimit(orgId){
       '<div class="sxa-sec">People today</div>' +
       '<table class="sxa-tbl g19-ptbl" style="width:100%"><thead><tr><th style="text-align:left">Person</th><th style="text-align:left">Used today</th><th style="text-align:right">Can export audiences</th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '<div class="sxa-sec">Ad audience exports</div>' +
-      '<label class="g19-sw"><button class="toggle-pill' + (u.export_provider_data ? ' on' : '') + '" role="switch" aria-checked="' + !!u.export_provider_data + '" data-sxa="use-provider"><i></i></button><span><b>Include phone numbers and emails found through Lusha or Apollo</b><small>Off by default. Their contracts usually limit data to your own internal use; check yours before switching this on. Your own records and people’s replies are always included.</small></span></label>' +
+      '<label class="g19-sw"><button class="toggle-pill' + (u.export_provider_data ? ' on' : '') + '" role="switch" aria-checked="' + !!u.export_provider_data + '" data-sxa="use-provider"><i></i></button><span><b>Include phone numbers and emails found through Lusha, Apollo or ZoomInfo</b><small>Off by default. Their contracts usually limit data to your own internal use; check yours before switching this on. Your own records and people’s replies are always included.</small></span></label>' +
       (ex ? '<table class="sxa-tbl" style="width:100%;max-width:640px;margin-top:10px"><thead><tr><th style="text-align:left">When</th><th style="text-align:left">Who</th><th style="text-align:left">Format</th><th style="text-align:right">Rows</th></tr></thead><tbody>' + ex + '</tbody></table>' : '<div class="sxa-note">No exports yet.</div>') +
       (r ? '<div class="sxa-sec">Contact reveals this month</div>' + (rrows ? '<table class="sxa-tbl" style="width:100%;max-width:560px"><thead><tr><th style="text-align:left">Person</th><th style="text-align:right">Paid</th><th style="text-align:right">Free</th><th style="text-align:right">With a phone</th></tr></thead><tbody>' + rrows + '</tbody></table>' : '<div class="sxa-note">No reveals yet this month.</div>') : '') +
     '</div>';
@@ -3043,7 +3055,7 @@ async function saveSeatLimit(orgId){
     if (a === 'use-team') { var def = {}; this.el.querySelectorAll('[data-g19-team]').forEach(function (i) { def[i.getAttribute('data-g19-team')] = i.value === '' ? null : i.value; }); this._g19Save({ defaults: def }, 'Team limits saved'); return true; }
     if (a === 'use-person') { var caps = {}; this.el.querySelectorAll('[data-g19-p]').forEach(function (i) { caps[i.getAttribute('data-g19-p')] = i.value === '' ? null : i.value; }); this.useOpen = null; this._g19Save({ person: { user_id: t.getAttribute('data-v'), caps: caps } }, 'Limits saved'); return true; }
     if (a === 'use-export') { var on = !t.classList.contains('on'); t.classList.toggle('on', on); this._g19Save({ export_user: { user_id: t.getAttribute('data-v'), on: on } }, on ? 'They can export audiences now' : 'Export switched off for them'); return true; }
-    if (a === 'use-provider') { var on2 = !t.classList.contains('on'); t.classList.toggle('on', on2); this._g19Save({ export_provider_data: on2 }, on2 ? 'Lusha and Apollo data will be included in exports' : 'Lusha and Apollo data stay out of exports'); return true; }
+    if (a === 'use-provider') { var on2 = !t.classList.contains('on'); t.classList.toggle('on', on2); this._g19Save({ export_provider_data: on2 }, on2 ? 'Lusha, Apollo and ZoomInfo data will be included in exports' : 'Lusha, Apollo and ZoomInfo data stay out of exports'); return true; }
     void self;
     return false;
   };
