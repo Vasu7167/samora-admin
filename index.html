@@ -1428,6 +1428,9 @@ function _xlAddSheet(wb, key, sheetName, rows){
   // Closed-list dropdowns. Applied well past the current row count so rows
   // the admin adds or pastes inherit them too, and rejected at entry rather
   // than failing later at import time.
+  // errorStyle must be 'stop', 'warning' or 'information'. 'error' is not
+  // valid in the file format: Excel shrugs, but strict readers (openpyxl,
+  // pandas, many BI tools) refuse to open the whole file.
   const listCol=function(headerName, options, title, help){
     const col=headers.indexOf(headerName)+1;
     if(col<1) return;
@@ -1436,7 +1439,7 @@ function _xlAddSheet(wb, key, sheetName, rows){
       ws.getCell(letter+r).dataValidation={
         type:'list', allowBlank:true,
         formulae:['"'+options.join(',')+'"'],
-        showErrorMessage:true, errorStyle:'error',
+        showErrorMessage:true, errorStyle:'stop',
         errorTitle:title, error:help
       };
     }
@@ -1466,7 +1469,7 @@ function _xlAddSheet(wb, key, sheetName, rows){
       for(let r=first;r<=last;r++){
         ws.getCell(letter+r).dataValidation={
           type:'whole', operator:'between', formulae:[0,100], allowBlank:false,
-          showErrorMessage:true, errorStyle:'error',
+          showErrorMessage:true, errorStyle:'stop',
           errorTitle:'Out of range',
           error:'Each weight is 0 to 100, and all five must add up to exactly 100.'
         };
